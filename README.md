@@ -1,43 +1,73 @@
-# Astro Starter Kit: Minimal
+# Sea of Clouds - Photography Portfolio
 
-```sh
-npm create astro@latest -- --template minimal
+A minimalist photography portfolio built with Astro and Cloudflare Workers, serving cached Adobe Lightroom data.
+
+## Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Start local development server (runs on http://localhost:8787)
+npm run dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## Development
 
-## 🚀 Project Structure
+This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets. See [CLAUDE.md](./CLAUDE.md) for detailed architecture and development guidance.
 
-Inside of your Astro project, you'll see the following folders and files:
+### Key Features
 
-```text
+- **Public Site**: Minimalist galleries with fast, SEO-optimized rendering
+- **Admin UI**: Single-user management interface for publishing albums
+- **Cache-first API**: Lightroom data served from R2 with Adobe fallback
+- **Local Development**: Test data mode since Adobe OAuth doesn't work on localhost
+
+### Project Structure
+
+```
 /
-├── public/
+├── dist/              # Build output (Worker files)
 ├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+│   ├── pages/         # Astro routes
+│   │   ├── admin/     # Admin interface
+│   │   └── api/       # API endpoints
+│   ├── types/         # TypeScript definitions
+│   └── worker.ts      # Worker entry point
+├── astro.config.mjs   # Astro configuration
+└── wrangler.toml      # Cloudflare Worker config
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+### Commands
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start local dev server on port 8787 |
+| `npm run build` | Build for production |
+| `npm run deploy` | Build and deploy to Cloudflare |
 
-Any static assets, like images, can be placed in the `public/` directory.
+### Environment
 
-## 🧞 Commands
+- **Development**: Uses test data with Lorem Picsum images
+- **Production**: Adobe OAuth with Lightroom API integration
+- **Authentication**: ADMIN_PASSWORD for local dev, Adobe SSO in production
 
-All commands are run from the root of the project, from a terminal:
+## Deployment
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+Deployment to Cloudflare Workers requires the following secrets to be set via `wrangler secret`:
 
-## 👀 Want to learn more?
+- `ADMIN_PASSWORD` - Admin access password for development
+- `ADOBE_CLIENT_ID` - Adobe API client ID (production only)
+- `ADOBE_CLIENT_SECRET` - Adobe API client secret (production only)
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+## Architecture
+
+See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation about:
+- Storage model (R2 + KV structure)
+- API rate limiting and caching strategies
+- Data flow patterns
+- Authentication approach
+- Development principles

@@ -1,0 +1,35 @@
+name = "seaofclouds"
+main = "dist/_worker.js"
+compatibility_date = "2025-08-22"
+
+[vars]
+ALLOWED_ORIGINS = "http://localhost:8787"
+ENVIRONMENT = "development"
+
+# KV namespace for token storage
+
+[[kv_namespaces]]
+binding = "ADOBE_LIGHTROOM_TOKENS"
+id = "80b8f7971b01450a95bd96b75f9caa86"
+
+[[kv_namespaces]]
+binding = "ADOBE_CREDENTIALS"
+id = "9799cc02d7af4843b133e32f4b937e5e"
+
+# KV namespace for rate limiting
+[[kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "5258468969ef40ab9ba1252d0c764f2d"
+
+# R2 bucket for asset storage
+[[r2_buckets]]
+binding = "ASSETS"
+bucket_name = "seaofclouds-assets"
+
+# Optional cron triggers (commented out for now)
+# [triggers]
+# crons = ["*/15 * * * *"]
+
+# Environment-specific overrides for production
+[env.production]
+vars = { ALLOWED_ORIGINS = "https://www.seaofclouds.com", ENVIRONMENT = "production" }
