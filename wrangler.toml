@@ -32,7 +32,8 @@ bucket_name = "seaofclouds-assets"
 
 # Environment-specific overrides for production
 [env.production]
-vars = { ALLOWED_ORIGINS = "https://www.seaofclouds.com", ENVIRONMENT = "production" }
+vars = { ALLOWED_ORIGINS = "https://dev.seaofclouds.com,https://www.seaofclouds.com,https://seaofclouds.com", ENVIRONMENT = "production" }
+route = { pattern = "dev.seaofclouds.com", custom_domain = true }
 
 [[env.production.kv_namespaces]]
 binding = "ADOBE_LIGHTROOM_TOKENS"
