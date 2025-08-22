@@ -130,3 +130,53 @@ Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/m
 - Resumable via KV cursors/timestamps
 - Exponential backoff on 429/5xx
 - Only mirror published albums to R2
+
+## REFERENCES
+
+Adobe Lightroom API
+- https://developer.adobe.com/lightroom/lightroom-api-docs/
+- https://developer.adobe.com/lightroom/lightroom-api-docs/getting-started/
+- https://developer.adobe.com/lightroom/lightroom-api-docs/api/
+- https://developer.adobe.com/lightroom/lightroom-api-docs/guides/common_data_model/
+- https://developer.adobe.com/lightroom/lightroom-api-docs/guides/calling_api/
+- https://developer.adobe.com/lightroom/lightroom-api-docs/release-notes/
+
+Adobe OAuth / IMS
+- https://developer.adobe.com/developer-console/docs/guides/authentication/UserAuthentication/implementation/
+- https://developer.adobe.com/apis
+
+Adobe I/O Events / Webhooks (for sync)
+- https://developer.adobe.com/events/docs/guides/
+- https://developer.adobe.com/firefly-services/docs/lightroom/features/
+- https://github.com/adobeio/io-event-sample-webhook
+
+Cloudflare Workers / Astro on Cloudflare
+- https://developers.cloudflare.com/workers/
+- https://docs.astro.build/en/guides/integrations-guide/cloudflare/
+- https://docs.astro.build/en/guides/deploy/cloudflare/
+
+Cloudflare Storage & Caching (R2, KV, Cache Rules)
+- https://developers.cloudflare.com/r2/buckets/public-buckets/
+- https://developers.cloudflare.com/r2/api/workers/workers-api-usage/
+- https://developers.cloudflare.com/kv/platform/limits/
+- https://developers.cloudflare.com/kv/api/list-keys/
+- https://developers.cloudflare.com/cache/how-to/cache-rules/
+ - https://developers.cloudflare.com/cache/concepts/default-cache-behavior/
+
+Wrangler & Secrets
+- https://developers.cloudflare.com/workers/wrangler/configuration/
+- https://developers.cloudflare.com/workers/wrangler/commands/
+- https://developers.cloudflare.com/workers/configuration/secrets/
+
+GitHub OAuth (fallback admin auth)
+- https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app
+- https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
+
+Astro & Repos
+- https://github.com/withastro/astro
+- https://github.com/cloudflare/workers-sdk
+
+Test Images (local dev placeholders)
+- https://picsum.photos/
+- https://github.com/DMarby/picsum-photos
+- refer to - https://developer.adobe.com/developer-console/docs/guides/authentication/UserAuthentication/implementation/ when working on Adobe OAuth or stuck

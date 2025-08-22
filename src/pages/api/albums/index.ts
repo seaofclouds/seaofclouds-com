@@ -1,26 +1,37 @@
 import type { APIRoute } from 'astro';
-import type { Album } from '../../../types';
+import { TestDataSource } from '../../../lib/datasource';
 
 export const GET: APIRoute = async ({ locals }) => {
   const env = locals.runtime.env as Env;
   
-  // For now, return test data
-  // TODO: Implement R2 fetch from /albums/metadata.json
-  const testAlbums: Album[] = [
-    {
-      id: 'test-album-1',
-      name: 'Test Album 2024',
-      created: '2024-01-01T00:00:00Z',
-      updated: '2024-01-01T00:00:00Z',
-      subtype: 'collection'
-    }
-  ];
-
-  return new Response(JSON.stringify({ albums: testAlbums }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, max-age=3600'
-    }
-  });
+  try {
+    // Use test data for now, regardless of environment
+    const dataSource = new TestDataSource();
+    const albums = await dataSource.getAlbums();
+    
+    return new Response(JSON.stringify({ 
+      albums,
+      debug: 'Updated with new test data',
+      count: albums.length 
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=3600',
+        'ETag': `"${Date.now()}"`
+      }
+    });
+  } catch (error) {
+    console.error('Failed to fetch albums:', error);
+    
+    return new Response(JSON.stringify({ 
+      error: 'Failed to fetch albums',
+      albums: [] 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  }
 };

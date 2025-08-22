@@ -1,8 +1,42 @@
 ---
-// Admin dashboard - protected by ADMIN_PASSWORD in dev
+import { createAuthProvider } from '../../lib/auth';
+
 export const prerender = false;
 
-// TODO: Add auth middleware check
+const env = Astro.locals.runtime.env as Env;
+const authProvider = createAuthProvider(env);
+
+// Check authentication
+let isAuthenticated = false;
+let authError = '';
+
+try {
+  if (env.ENVIRONMENT === 'production') {
+    // Adobe OAuth check
+    isAuthenticated = await (authProvider as any).isAuthenticated();
+  } else {
+    // Development session check - don't need storage for simple session validation
+    const sessionCookie = Astro.cookies.get('admin_session');
+    if (sessionCookie) {
+      isAuthenticated = await (authProvider as any).isAuthenticated(sessionCookie.value);
+    }
+  }
+} catch (error) {
+  authError = error instanceof Error ? error.message : 'Authentication error';
+}
+
+// Redirect to login if not authenticated
+if (!isAuthenticated) {
+  return Astro.redirect('/admin/auth/login');
+}
+
+// Get some basic stats for the dashboard
+const testStats = {
+  totalAlbums: 13,
+  publicAlbums: 8,
+  lastSync: '2024-08-22T20:00:00Z',
+  environment: env.ENVIRONMENT
+};
 ---
 
 <!DOCTYPE html>
@@ -11,11 +45,151 @@ export const prerender = false;
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Sea of Clouds</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+      color: #333;
+    }
+    
+    .header {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+    
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .card h2 {
+      margin-top: 0;
+      color: #007cba;
+    }
+    
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      margin: 10px 0;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .stat:last-child {
+      border-bottom: none;
+    }
+    
+    .button {
+      display: inline-block;
+      padding: 10px 16px;
+      background: #007cba;
+      color: white;
+      text-decoration: none;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .button:hover {
+      background: #005a87;
+    }
+    
+    .button.secondary {
+      background: #666;
+    }
+    
+    .button.secondary:hover {
+      background: #444;
+    }
+    
+    .env-badge {
+      background: #e3f2fd;
+      color: #1976d2;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .env-badge.production {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+  </style>
 </head>
 <body>
-  <main>
-    <h1>Admin Dashboard</h1>
-    <p>Album management interface (auth pending)</p>
-  </main>
+  <div class="header">
+    <h1>Sea of Clouds Admin</h1>
+    <div>
+      <span class={`env-badge ${testStats.environment}`}>
+        {testStats.environment.toUpperCase()}
+      </span>
+      <a href="/admin/auth/logout" class="button secondary">Logout</a>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="card">
+      <h2>Overview</h2>
+      <div class="stat">
+        <span>Total Albums</span>
+        <strong>{testStats.totalAlbums}</strong>
+      </div>
+      <div class="stat">
+        <span>Public Albums</span>
+        <strong>{testStats.publicAlbums}</strong>
+      </div>
+      <div class="stat">
+        <span>Environment</span>
+        <strong>{testStats.environment}</strong>
+      </div>
+      <div class="stat">
+        <span>Last Sync</span>
+        <strong>{new Date(testStats.lastSync).toLocaleString()}</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Albums Management</h2>
+      <p>Manage your Lightroom albums, publish settings, and slugs.</p>
+      <a href="/admin/albums" class="button">Manage Albums</a>
+    </div>
+
+    <div class="card">
+      <h2>Sync & Cache</h2>
+      <p>Sync data from Lightroom and manage R2 cache.</p>
+      <a href="/admin/sync" class="button">Sync Now</a>
+      <a href="/admin/cache" class="button secondary">Clear Cache</a>
+    </div>
+
+    <div class="card">
+      <h2>API Status</h2>
+      <p>View API usage, rate limits, and authentication status.</p>
+      <a href="/admin/api-status" class="button">View Status</a>
+    </div>
+  </div>
+
+  {authError && (
+    <div style="background: #ffebee; color: #c62828; padding: 15px; border-radius: 4px; margin-top: 20px;">
+      <strong>Authentication Warning:</strong> {authError}
+    </div>
+  )}
 </body>
 </html>

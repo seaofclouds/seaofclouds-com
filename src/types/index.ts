@@ -6,7 +6,7 @@ export interface Album {
   cover?: Asset;
   assets?: Asset[];
   parent_id?: string;
-  subtype?: 'collection' | 'collection_set';
+  subtype?: 'collection' | 'collection_set' | 'smart' | 'topic';
 }
 
 export interface Asset {
