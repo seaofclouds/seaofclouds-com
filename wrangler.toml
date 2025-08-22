@@ -13,8 +13,8 @@ binding = "ADOBE_LIGHTROOM_TOKENS"
 id = "80b8f7971b01450a95bd96b75f9caa86"
 
 [[kv_namespaces]]
-binding = "ADOBE_CREDENTIALS"
-id = "9799cc02d7af4843b133e32f4b937e5e"
+binding = "ADOBE_OAUTH_TOKENS"
+id = "b4606e3118c94b25a0b99ff9815fc8ca"
 
 # KV namespace for rate limiting
 [[kv_namespaces]]
@@ -33,3 +33,19 @@ bucket_name = "seaofclouds-assets"
 # Environment-specific overrides for production
 [env.production]
 vars = { ALLOWED_ORIGINS = "https://www.seaofclouds.com", ENVIRONMENT = "production" }
+
+[[env.production.kv_namespaces]]
+binding = "ADOBE_LIGHTROOM_TOKENS"
+id = "80b8f7971b01450a95bd96b75f9caa86"
+
+[[env.production.kv_namespaces]]
+binding = "ADOBE_OAUTH_TOKENS"
+id = "b4606e3118c94b25a0b99ff9815fc8ca"
+
+[[env.production.kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "5258468969ef40ab9ba1252d0c764f2d"
+
+[[env.production.r2_buckets]]
+binding = "ASSETS"
+bucket_name = "seaofclouds-assets"

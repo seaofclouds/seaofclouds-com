@@ -2,13 +2,15 @@
 /// <reference types="astro/client" />
 
 interface Env {
-  ADOBE_TOKENS: KVNamespace;
+  ADOBE_LIGHTROOM_TOKENS: KVNamespace;  // Non-sensitive: sync state, cursors, pagination
+  ADOBE_OAUTH_TOKENS: KVNamespace;      // Runtime OAuth: access_token, refresh_token, token_expires_at
   RATE_LIMITS: KVNamespace;
   ASSETS: R2Bucket;
   ALLOWED_ORIGINS: string;
   ENVIRONMENT: 'development' | 'staging' | 'production';
-  // Dev-only password auth (no Adobe OAuth in development)
+  // Secrets (encrypted, set via wrangler secret)
   ADMIN_PASSWORD?: string;
-  // Optional for manual sync triggers
+  ADOBE_CLIENT_ID?: string;      // Secret: Adobe API client ID
+  ADOBE_CLIENT_SECRET?: string;  // Secret: Adobe API client secret
   API_SECRET_KEY?: string;
 }

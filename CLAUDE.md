@@ -54,7 +54,8 @@ Abstracted as `DataSource = test | lightroom | flatfile`:
 - `/assets/{assetId}/renditions/{size}.jpg` - 640, 1280, 2048, 2560, fullsize
 
 **KV Structure:**
-- `ADOBE_TOKENS` - OAuth tokens
+- `ADOBE_LIGHTROOM_TOKENS` - Sync state, cursors, pagination metadata
+- `ADOBE_OAUTH_TOKENS` - Runtime OAuth tokens (access_token, refresh_token, token_expires_at)
 - `RATE_LIMITS` - Per-route counters/backoff
 - `slug:{slug}` - Slug→ID mapping
 - `sync:state` - Ingestion cursors + health
@@ -95,17 +96,19 @@ Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/m
 ## Environment Configuration
 
 **Wrangler Secrets Required:**
-- `ADOBE_CLIENT_ID`
-- `ADOBE_CLIENT_SECRET` 
-- `ADOBE_REDIRECT_URI`
-- `ADMIN_PASSWORD`
-- `ALLOWED_ORIGINS`
+- `ADOBE_CLIENT_ID` - Adobe API application ID
+- `ADOBE_CLIENT_SECRET` - Adobe API application secret
+- `ADMIN_PASSWORD` - Admin UI password
+- `API_SECRET_KEY` (optional) - For manual sync triggers
+
+**Environment Variables (in wrangler.toml):**
+- `ALLOWED_ORIGINS` - CORS allowed origins
 - `ENVIRONMENT` (development | staging | production)
-- `API_SECRET_KEY` (optional)
 
 **KV Namespaces:**
-- `ADOBE_TOKENS`
-- `RATE_LIMITS`
+- `ADOBE_LIGHTROOM_TOKENS` - Sync metadata and state
+- `ADOBE_OAUTH_TOKENS` - OAuth tokens and expiry
+- `RATE_LIMITS` - API rate limiting
 
 **R2 Bucket:**
 - `ASSETS` (bucket: seaofclouds-assets)
