@@ -17,10 +17,16 @@ export class AdobeOAuth {
   // Lightroom Partner API scopes - from official Lightroom Partner API documentation
   private static readonly LIGHTROOM_SCOPE = 'openid,AdobeID,lr_partner_apis,lr_partner_rendition_apis,offline_access';
 
-  constructor(
-    private env: Env,
-    private storage = createStorageHelpers(env)
-  ) {}
+  private storage: ReturnType<typeof createStorageHelpers> | null = null;
+  
+  constructor(private env: Env) {}
+  
+  private getStorage() {
+    if (!this.storage) {
+      this.storage = createStorageHelpers(this.env);
+    }
+    return this.storage;
+  }
 
   /**
    * Generate Adobe OAuth authorization URL
@@ -92,7 +98,7 @@ export class AdobeOAuth {
       expiresAt: tokens.expiresAt
     });
 
-    await this.storage.kv.setOAuthTokens(tokens);
+    await this.getStorage().kv.setOAuthTokens(tokens);
     console.log('Tokens stored successfully');
     return tokens;
   }
@@ -101,7 +107,7 @@ export class AdobeOAuth {
    * Refresh access token using refresh token
    */
   async refreshTokens(): Promise<OAuthTokens> {
-    const currentTokens = await this.storage.kv.getOAuthTokens();
+    const currentTokens = await this.getStorage().kv.getOAuthTokens();
     
     if (!currentTokens.refreshToken) {
       throw new Error('No refresh token available - user needs to re-authenticate');
@@ -137,7 +143,7 @@ export class AdobeOAuth {
       tokenType: data.token_type || 'Bearer'
     };
 
-    await this.storage.kv.setOAuthTokens(tokens);
+    await this.getStorage().kv.setOAuthTokens(tokens);
     return tokens;
   }
 
@@ -145,7 +151,7 @@ export class AdobeOAuth {
    * Get a valid access token, refreshing if necessary
    */
   async getValidAccessToken(): Promise<string> {
-    const tokens = await this.storage.kv.getOAuthTokens();
+    const tokens = await this.getStorage().kv.getOAuthTokens();
     
     if (!tokens.accessToken) {
       throw new Error('No access token available - user needs to authenticate');
@@ -174,7 +180,7 @@ export class AdobeOAuth {
    * Revoke all tokens and clear storage
    */
   async revokeTokens(): Promise<void> {
-    const tokens = await this.storage.kv.getOAuthTokens();
+    const tokens = await this.getStorage().kv.getOAuthTokens();
     
     if (tokens.accessToken) {
       try {
@@ -196,7 +202,7 @@ export class AdobeOAuth {
     }
 
     // Clear tokens from storage
-    await this.storage.kv.setOAuthTokens({
+    await this.getStorage().kv.setOAuthTokens({
       accessToken: '',
       refreshToken: '',
       expiresAt: new Date(0).toISOString()

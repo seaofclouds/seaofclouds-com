@@ -30,13 +30,21 @@ if (!isAuthenticated) {
   return Astro.redirect('/admin/auth/login');
 }
 
-// Get some basic stats for the dashboard
-const testStats = {
-  totalAlbums: 13,
-  publicAlbums: 8,
-  lastSync: '2024-08-22T20:00:00Z',
+// Get real stats from R2 and KV
+import { createStorageHelpers } from '../../lib/storage';
+
+let stats = {
+  totalAlbums: 0,
+  publicAlbums: 0,
+  lastSync: null as string | null,
   environment: env.ENVIRONMENT
 };
+
+let albums: any[] = [];
+let shouldAutoSync = true; // Always try to load albums via JS
+
+// Skip server-side album loading to avoid R2 errors during SSR
+// Albums will be loaded via JavaScript after page loads
 ---
 
 <!DOCTYPE html>
@@ -45,151 +53,524 @@ const testStats = {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Sea of Clouds</title>
+  <meta name="build-timestamp" content={new Date().toISOString()}>
+  <meta name="build-date" content={new Date().toLocaleDateString()} data-build-time={new Date().toLocaleString()}>
   <style>
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      margin: 0;
-      padding: 20px;
-      background: #f5f5f5;
-      color: #333;
+    body { 
+      font-family: system-ui, sans-serif; 
+      background: #f5f7f8; 
+      margin: 0; 
+      padding: 20px; 
+      min-height: 100vh; 
+      color: #50565f; 
     }
-    
-    .header {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      margin-bottom: 20px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+    .container { max-width: 1200px; margin: 0 auto; }
+    .card { 
+      background: white; 
+      padding: 20px; 
+      border-radius: 8px; 
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
+      margin-bottom: 20px; 
     }
-    
-    .dashboard {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .badge { 
+      background: #f3e5f5; 
+      color: #7b1fa2; 
+      padding: 4px 8px; 
+      border-radius: 4px; 
+      font-size: 12px; 
     }
-    
-    .card {
-      background: white;
-      padding: 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    
-    .card h2 {
-      margin-top: 0;
-      color: #007cba;
-    }
-    
-    .stat {
-      display: flex;
-      justify-content: space-between;
-      margin: 10px 0;
-      padding: 8px 0;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .stat:last-child {
-      border-bottom: none;
-    }
-    
-    .button {
+    .button { 
+      padding: 10px 16px; 
+      border-radius: 6px; 
+      border: none; 
+      cursor: pointer; 
+      text-decoration: none; 
       display: inline-block;
-      padding: 10px 16px;
-      background: #007cba;
-      color: white;
-      text-decoration: none;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-      font-size: 14px;
     }
-    
-    .button:hover {
-      background: #005a87;
+    .btn-primary { background: #6b7158; color: white; }
+    .btn-secondary { background: #9daab7; color: white; }
+    .btn-success { background: #28a745; color: white; }
+    .btn-draft { background: #6c757d; color: white; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .album-item { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 15px; 
+      background: #f5f7f8; 
+      border-radius: 6px; 
+      border-left: 4px solid #ddd; 
+      margin-bottom: 10px;
     }
+    .album-item.published { border-left-color: #28a745; }
+    .status { padding: 10px; border-radius: 4px; margin-top: 10px; display: none; }
+    .status.success { background: #d4edda; color: #155724; }
+    .status.error { background: #f8d7da; color: #721c24; }
+    .status.loading { background: #d1ecf1; color: #0c5460; }
     
-    .button.secondary {
-      background: #666;
+    /* Table styles */
+    .table-container { overflow-x: auto; }
+    .albums-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    .albums-table th, .albums-table td { 
+      text-align: left; 
+      padding: 12px 8px; 
+      border-bottom: 1px solid #dee4e7; 
     }
-    
-    .button.secondary:hover {
-      background: #444;
+    .albums-table th { 
+      background: #f5f7f8; 
+      font-weight: 600; 
+      cursor: pointer; 
+      user-select: none;
+      position: relative;
     }
-    
-    .env-badge {
-      background: #e3f2fd;
-      color: #1976d2;
-      padding: 4px 8px;
-      border-radius: 4px;
+    .albums-table th:hover { background: #edf0f2; }
+    .albums-table th.sortable::after { 
+      content: '↕️'; 
+      opacity: 0.5; 
+      margin-left: 5px; 
       font-size: 12px;
-      font-weight: 500;
+    }
+    .albums-table th.sort-asc::after { content: '↑'; opacity: 1; }
+    .albums-table th.sort-desc::after { content: '↓'; opacity: 1; }
+    .albums-table tbody tr:hover { background: #f5f7f8; }
+    
+    /* Filter input */
+    .filter-input { 
+      width: 100%; 
+      padding: 8px 12px; 
+      border: 1px solid #c9d2d8; 
+      border-radius: 4px; 
+      margin-bottom: 15px;
     }
     
-    .env-badge.production {
-      background: #f3e5f5;
-      color: #7b1fa2;
+    /* Bulk actions */
+    .bulk-actions { 
+      display: flex; 
+      gap: 10px; 
+      align-items: center; 
+      margin: 15px 0; 
+      padding: 10px; 
+      background: #f5f7f8; 
+      border-radius: 4px; 
     }
+    .bulk-actions.hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Sea of Clouds Admin</h1>
-    <div>
-      <span class={`env-badge ${testStats.environment}`}>
-        {testStats.environment.toUpperCase()}
-      </span>
-      <a href="/admin/auth/logout" class="button secondary">Logout</a>
-    </div>
-  </div>
-
-  <div class="dashboard">
-    <div class="card">
-      <h2>Overview</h2>
-      <div class="stat">
-        <span>Total Albums</span>
-        <strong>{testStats.totalAlbums}</strong>
+  <div class="container">
+    <!-- Header -->
+    <header class="card">
+      <div class="header">
+        <h1>Sea of Clouds Admin</h1>
+        <div>
+          <span class="badge">
+            {stats.environment.toUpperCase()}
+          </span>
+          <a href="/admin/auth/logout" class="button btn-secondary">Logout</a>
+        </div>
       </div>
-      <div class="stat">
-        <span>Public Albums</span>
-        <strong>{testStats.publicAlbums}</strong>
+    </header>
+
+    <!-- Dashboard Grid -->
+    <div class="grid">
+      <!-- Overview Card -->
+      <div class="card">
+        <h2>Overview</h2>
+        <div>
+          <div class="stat">
+            <span>Total Albums</span>
+            <strong>{stats.totalAlbums}</strong>
+          </div>
+          <div class="stat">
+            <span>Public Albums</span>
+            <strong>{stats.publicAlbums}</strong>
+          </div>
+          <div class="stat">
+            <span>Environment</span>
+            <strong>{stats.environment}</strong>
+          </div>
+          <div class="stat">
+            <span>Last Sync</span>
+            <strong>{stats.lastSync ? new Date(stats.lastSync).toLocaleString() : 'Never'}</strong>
+          </div>
+        </div>
       </div>
-      <div class="stat">
-        <span>Environment</span>
-        <strong>{testStats.environment}</strong>
+
+      <!-- Quick Sync Card -->
+      <div class="card">
+        <h2>Quick Sync</h2>
+        <p>Sync albums from Lightroom to R2 cache.</p>
+        <button onclick="syncAlbums()" class="button btn-primary">Sync Albums</button>
+        <div id="sync-status" class="status">
+        </div>
       </div>
-      <div class="stat">
-        <span>Last Sync</span>
-        <strong>{new Date(testStats.lastSync).toLocaleString()}</strong>
-      </div>
+
     </div>
 
-    <div class="card">
-      <h2>Albums Management</h2>
-      <p>Manage your Lightroom albums, publish settings, and slugs.</p>
-      <a href="/admin/albums" class="button">Manage Albums</a>
-    </div>
+    {albums.length > 0 && (
+      <!-- Albums Table -->
+      <div class="card">
+        <h2 style="color: #6b7158; margin-bottom: 20px;">Albums ({albums.length} of {stats.totalAlbums})</h2>
+        
+        <!-- Filter -->
+        <input 
+          type="text" 
+          id="albumFilter" 
+          placeholder="Filter albums by name..." 
+          class="filter-input"
+          onkeyup="filterAlbums()"
+        />
+        
+        <!-- Bulk Actions -->
+        <div id="bulkActions" class="bulk-actions hidden">
+          <span id="selectedCount">0 selected</span>
+          <button onclick="bulkPublish(true)" class="button btn-success">Publish Selected</button>
+          <button onclick="bulkPublish(false)" class="button btn-draft">Unpublish Selected</button>
+          <button onclick="clearSelection()" class="button btn-secondary">Clear Selection</button>
+        </div>
+        
+        <!-- Table -->
+        <div class="table-container">
+          <table class="albums-table" id="albumsTable">
+            <thead>
+              <tr>
+                <th style="width: 40px;">
+                  <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                </th>
+                <th class="sortable" onclick="sortTable('name')">Name</th>
+                <th class="sortable" onclick="sortTable('type')">Type</th>
+                <th class="sortable" onclick="sortTable('created')">Created</th>
+                <th class="sortable" onclick="sortTable('updated')">Updated</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {await Promise.all(albums.map(async (album: any) => {
+                let isPublic = false;
+                try {
+                  const flags = await storage.kv.get(`flags:${album.id}`, 'json');
+                  isPublic = flags?.public || false;
+                } catch (error) {
+                  console.error(`Failed to get flags for album ${album.id}:`, error);
+                }
+                return (
+                  <tr data-album-id={album.id} data-name={album.payload?.name || 'Unnamed Album'} data-type={album.subtype || 'collection'} data-created={album.created || ''} data-updated={album.updated || ''}>
+                    <td>
+                      <input type="checkbox" class="album-checkbox" value={album.id} onchange="updateBulkActions()">
+                    </td>
+                    <td>
+                      <strong>{album.payload?.name || 'Unnamed Album'}</strong>
+                      <br />
+                      <small style="color: #999; font-family: monospace;">{album.id}</small>
+                    </td>
+                    <td style="text-transform: capitalize;">{album.subtype || 'collection'}</td>
+                    <td>{album.created ? new Date(album.created).toLocaleDateString() : '-'}</td>
+                    <td>{album.updated ? new Date(album.updated).toLocaleDateString() : '-'}</td>
+                    <td>
+                      <span class={`badge ${isPublic ? 'btn-success' : 'btn-draft'}`} style="padding: 4px 8px; border-radius: 12px; font-size: 12px;">
+                        {isPublic ? 'Published' : 'Draft'}
+                      </span>
+                    </td>
+                    <td>
+                      <button 
+                        onclick={`togglePublish('${album.id}', ${isPublic})`}
+                        class={`button ${isPublic ? 'btn-draft' : 'btn-success'}`}
+                        style="padding: 6px 12px; font-size: 12px;"
+                      >
+                        {isPublic ? 'Unpublish' : 'Publish'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              }))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
 
-    <div class="card">
-      <h2>Sync & Cache</h2>
-      <p>Sync data from Lightroom and manage R2 cache.</p>
-      <a href="/admin/sync" class="button">Sync Now</a>
-      <a href="/admin/cache" class="button secondary">Clear Cache</a>
-    </div>
-
-    <div class="card">
-      <h2>API Status</h2>
-      <p>View API usage, rate limits, and authentication status.</p>
-      <a href="/admin/api-status" class="button">View Status</a>
-    </div>
+    {albums.length === 0 && (
+      <!-- No Albums Message -->
+      <div class="card">
+        <h2>No Albums Found</h2>
+        <p>No albums have been synced yet. Albums will auto-load from Lightroom.</p>
+      </div>
+    )}
   </div>
 
   {authError && (
-    <div style="background: #ffebee; color: #c62828; padding: 15px; border-radius: 4px; margin-top: 20px;">
-      <strong>Authentication Warning:</strong> {authError}
+    <div class="container">
+      <div class="status error">
+        <strong>Authentication Warning:</strong> {authError}
+      </div>
     </div>
   )}
+
+  <script>
+    // Table sorting and filtering functionality
+    let sortDirection = {};
+    
+    function sortTable(column) {
+      const table = document.getElementById('albumsTable');
+      const tbody = table.getElementsByTagName('tbody')[0];
+      const rows = Array.from(tbody.getElementsByTagName('tr'));
+      
+      const isAsc = sortDirection[column] !== 'asc';
+      sortDirection[column] = isAsc ? 'asc' : 'desc';
+      
+      rows.sort((a, b) => {
+        let aVal, bVal;
+        
+        if (column === 'name') {
+          aVal = a.dataset.name?.toLowerCase() || '';
+          bVal = b.dataset.name?.toLowerCase() || '';
+        } else if (column === 'type') {
+          aVal = a.dataset.type?.toLowerCase() || '';
+          bVal = b.dataset.type?.toLowerCase() || '';
+        } else if (column === 'created') {
+          aVal = new Date(a.dataset.created || 0);
+          bVal = new Date(b.dataset.created || 0);
+        } else if (column === 'updated') {
+          aVal = new Date(a.dataset.updated || 0);
+          bVal = new Date(b.dataset.updated || 0);
+        }
+        
+        if (aVal < bVal) return isAsc ? -1 : 1;
+        if (aVal > bVal) return isAsc ? 1 : -1;
+        return 0;
+      });
+      
+      rows.forEach(row => tbody.appendChild(row));
+      
+      // Update sort indicators
+      document.querySelectorAll('.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+      });
+      document.querySelector(`[onclick="sortTable('${column}')"]`)?.classList.add(isAsc ? 'sort-asc' : 'sort-desc');
+    }
+    
+    function filterAlbums() {
+      const input = document.getElementById('albumFilter');
+      const filter = input.value.toLowerCase();
+      const table = document.getElementById('albumsTable');
+      const rows = table.getElementsByTagName('tr');
+      
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const name = row.dataset.name?.toLowerCase() || '';
+        row.style.display = name.includes(filter) ? '' : 'none';
+      }
+      updateBulkActions();
+    }
+    
+    function toggleSelectAll() {
+      const selectAll = document.getElementById('selectAll');
+      const checkboxes = document.querySelectorAll('.album-checkbox');
+      const visibleCheckboxes = Array.from(checkboxes).filter(cb => 
+        cb.closest('tr').style.display !== 'none'
+      );
+      
+      visibleCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+      });
+      updateBulkActions();
+    }
+    
+    function updateBulkActions() {
+      const checkboxes = document.querySelectorAll('.album-checkbox');
+      const visibleChecked = Array.from(checkboxes).filter(cb => 
+        cb.checked && cb.closest('tr').style.display !== 'none'
+      );
+      const bulkActions = document.getElementById('bulkActions');
+      const selectedCount = document.getElementById('selectedCount');
+      
+      if (visibleChecked.length > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = `${visibleChecked.length} selected`;
+      } else {
+        bulkActions.classList.add('hidden');
+      }
+      
+      // Update select all checkbox
+      const selectAll = document.getElementById('selectAll');
+      const visibleBoxes = Array.from(checkboxes).filter(cb => 
+        cb.closest('tr').style.display !== 'none'
+      );
+      
+      selectAll.checked = visibleBoxes.length > 0 && visibleChecked.length === visibleBoxes.length;
+      selectAll.indeterminate = visibleChecked.length > 0 && visibleChecked.length < visibleBoxes.length;
+    }
+    
+    function clearSelection() {
+      document.querySelectorAll('.album-checkbox').forEach(cb => cb.checked = false);
+      document.getElementById('selectAll').checked = false;
+      updateBulkActions();
+    }
+    
+    async function bulkPublish(shouldPublish) {
+      const checkedBoxes = Array.from(document.querySelectorAll('.album-checkbox:checked'))
+        .filter(cb => cb.closest('tr').style.display !== 'none');
+      
+      if (checkedBoxes.length === 0) return;
+      
+      const button = event.target;
+      const originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Processing...';
+      
+      try {
+        const promises = checkedBoxes.map(checkbox => {
+          const albumId = checkbox.value;
+          return fetch('/admin/api/sync-metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'publish',
+              albumId: albumId,
+              publish: shouldPublish
+            })
+          });
+        });
+        
+        await Promise.all(promises);
+        location.reload(); // Reload to show updated statuses
+      } catch (error) {
+        alert(`Bulk operation failed: ${error.message}`);
+      } finally {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+
+    async function syncAlbums() {
+      const statusDiv = document.getElementById('sync-status');
+      const button = event.target;
+      
+      statusDiv.classList.remove('hidden');
+      statusDiv.className = 'mt-4 admin-status-loading';
+      statusDiv.textContent = 'Syncing albums from Lightroom...';
+      button.disabled = true;
+      button.textContent = 'Syncing...';
+      
+      try {
+        const response = await fetch('/admin/api/sync-fresh?limit=20', {
+          method: 'GET'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+          statusDiv.className = 'mt-4 admin-status-success';
+          statusDiv.textContent = `✓ ${result.message}`;
+          
+          // Reload page after 2 seconds to show updated data
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          statusDiv.className = 'mt-4 admin-status-error';
+          statusDiv.textContent = `✗ ${result.error || result.message || 'Sync failed'}`;
+        }
+      } catch (error) {
+        statusDiv.className = 'mt-4 admin-status-error';
+        statusDiv.textContent = `✗ Network error: ${error.message}`;
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Sync Albums';
+      }
+    }
+    
+    // Load albums on page load
+    document.addEventListener('DOMContentLoaded', async function() {
+      console.log('DOMContentLoaded event fired - loading albums...');
+      const statusDiv = document.getElementById('sync-status');
+      statusDiv.classList.remove('hidden');
+      statusDiv.className = 'mt-4 admin-status-loading';
+      statusDiv.textContent = 'Loading albums from Lightroom...';
+      
+      try {
+        const response = await fetch('/admin/api/sync-fresh?limit=50', {
+          method: 'GET'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+          statusDiv.className = 'mt-4 admin-status-success';
+          statusDiv.textContent = `✓ Loaded ${result.albumIds.length} albums`;
+          
+          // Update stats display
+          document.querySelector('.text-raven-600:first-of-type + strong').textContent = result.albumIds.length;
+          document.querySelector('.text-raven-600:nth-of-type(4) + strong').textContent = new Date().toLocaleString();
+          
+          // Reload page after 2 seconds to show full album table
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          statusDiv.className = 'mt-4 admin-status-error';
+          statusDiv.textContent = `✗ Failed to load albums: ${result.error || result.message || 'Unknown error'}`;
+        }
+      } catch (error) {
+        statusDiv.className = 'mt-4 admin-status-error';
+        statusDiv.textContent = `✗ Network error: ${error.message}`;
+      }
+    });
+    
+    async function togglePublish(albumId, isCurrentlyPublic) {
+      const button = event.target;
+      const originalText = button.textContent;
+      
+      button.disabled = true;
+      button.textContent = 'Updating...';
+      
+      try {
+        const response = await fetch('/admin/api/sync-metadata', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: 'publish',
+            albumId: albumId
+          })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+          // Update UI immediately
+          button.className = isCurrentlyPublic ? 'admin-button-draft' : 'admin-button-success';
+          button.textContent = isCurrentlyPublic ? 'Draft' : 'Published';
+          
+          // Update the album item styling
+          const albumItem = button.closest('div');
+          const borderElement = albumItem.querySelector('div[class*="border-l-4"]');
+          if (borderElement) {
+            if (isCurrentlyPublic) {
+              borderElement.classList.remove('border-green-500');
+              borderElement.classList.add('border-raven-300');
+            } else {
+              borderElement.classList.remove('border-raven-300');
+              borderElement.classList.add('border-green-500');
+            }
+          }
+          
+          // Update the onclick handler
+          button.setAttribute('onclick', `togglePublish('${albumId}', ${!isCurrentlyPublic})`);
+        } else {
+          throw new Error(result.error || 'Failed to update publish status');
+        }
+      } catch (error) {
+        alert(`Failed to update album: ${error.message}`);
+        button.textContent = originalText;
+      } finally {
+        button.disabled = false;
+      }
+    }
+  </script>
 </body>
 </html>

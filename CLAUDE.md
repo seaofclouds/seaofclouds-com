@@ -24,8 +24,8 @@ npm run dev
 # Build for production
 npm run build
 
-# Deploy to Cloudflare
-npx wrangler deploy
+# Deploy to Cloudflare (always specify production environment)
+npx wrangler deploy --env production
 ```
 
 ## Architecture
@@ -36,9 +36,15 @@ All routes handled by one Worker:
 - `/:slug` - Album by slug (KV lookup)
 - `/albums/:id` - Album by Lightroom ID
 - `/assets/*` - R2 asset serving with Adobe fallback
-- `/admin/*` - Protected admin UI
-- `/admin/api/*` - Admin JSON endpoints
+- `/admin/*` - Protected admin UI (requires authentication)
+- `/admin/api/*` - Protected admin JSON endpoints (requires authentication)
 - `/admin/auth/*` - OAuth (prod) / dev login (local)
+
+**Authentication Architecture:**
+- All `/admin/*` routes protected by Astro middleware
+- Production: Adobe OAuth with KV-stored tokens
+- Development: Session-based auth with in-memory sessions
+- Middleware redirects unauthenticated requests to `/admin/auth/login`
 
 ### Data Sources
 Abstracted as `DataSource = test | lightroom | flatfile`:
@@ -64,10 +70,12 @@ Abstracted as `DataSource = test | lightroom | flatfile`:
 ### Key Implementation Notes
 
 **Authentication:**
-- Production: Adobe OAuth 2.0 with IMS endpoints for `/admin/*` (single user)
-- Local dev: Passwordless authentication (simplified for development)
-- OAuth scopes: `openid,AdobeID,lr_partner_apis,lr_partner_rendition_apis,offline_access`
-- Token refresh implemented with automatic renewal
+- **Middleware Protection**: All `/admin/*` routes protected by `src/middleware.ts`
+- **Production**: Adobe OAuth 2.0 with IMS endpoints (single user)
+- **Development**: Passwordless session-based authentication
+- **OAuth Scopes**: `openid,AdobeID,lr_partner_apis,lr_partner_rendition_apis,offline_access`
+- **Token Management**: Automatic refresh with KV storage
+- **Session Handling**: Cookies with HttpOnly, Secure, SameSite=Strict
 
 **Caching Strategy:**
 - JSON: `Cache-Control: public, max-age=3600` with ETag
@@ -186,3 +194,21 @@ Test Images (local dev placeholders)
 - when user confirms task is complete, update @Planning-Chat.md and prepare a git commit and push to Github
 - combine deploy with a tail so we can monitor activity.
 - don't say "you're absolutely right!" please try other things
+
+## Current Development Status
+
+### ✅ Completed Infrastructure:
+- **Foundation**: Astro + Cloudflare Workers with Adobe OAuth
+- **Authentication**: Middleware-protected admin routes (`src/middleware.ts`)
+- **API Structure**: All endpoints consolidated under `/admin/api/*`
+- **Production Deploy**: Working at `dev.seaofclouds.com`
+
+### 🔨 Active Development:
+- **Sync System**: Enhancing `sync-fresh.ts` with pagination and state management
+- **Next Phase**: Build upon clean sync-fresh.ts foundation rather than complex sync-metadata.ts
+
+### 📋 Sync Endpoint Strategy:
+- `sync-fresh.ts` - Clean foundation for album sync (needs enhancement)
+- `sync-metadata.ts` - Complex implementation (reference for features)
+- `sync-renditions.ts` - Focused rendition downloads (stable)
+- deploy to production by default while working on admin and lightroom api.
