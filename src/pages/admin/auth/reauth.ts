@@ -12,11 +12,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
   try {
     // Clear any existing OAuth tokens to force re-authentication
     const storage = createStorageHelpers(env);
-    await storage.kv.setOAuthTokens({
-      accessToken: '',
-      refreshToken: '',
-      expiresAt: new Date(0).toISOString()
-    });
+    await storage.kv.clearOAuthTokens();
     
     console.log('Cleared OAuth tokens, forcing re-authentication');
   } catch (error) {

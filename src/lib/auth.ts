@@ -85,7 +85,15 @@ export class AdobeOAuth {
       tokenType: data.token_type || 'Bearer'
     };
 
+    console.log('About to store tokens:', {
+      hasAccessToken: !!tokens.accessToken,
+      accessTokenLength: tokens.accessToken?.length,
+      hasRefreshToken: !!tokens.refreshToken,
+      expiresAt: tokens.expiresAt
+    });
+
     await this.storage.kv.setOAuthTokens(tokens);
+    console.log('Tokens stored successfully');
     return tokens;
   }
 

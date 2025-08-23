@@ -28,5 +28,5 @@ pnpm-debug.log*
 .dev.vars
 
 # chats
-Planning-Chat.md
-tmp/
+# Planning-Chat.md
+# tmp/

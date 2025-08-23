@@ -6,20 +6,7 @@ compatibility_date = "2025-08-22"
 ALLOWED_ORIGINS = "http://localhost:8787"
 ENVIRONMENT = "development"
 
-# KV namespace for token storage
-
-[[kv_namespaces]]
-binding = "ADOBE_LIGHTROOM_TOKENS"
-id = "80b8f7971b01450a95bd96b75f9caa86"
-
-[[kv_namespaces]]
-binding = "ADOBE_OAUTH_TOKENS"
-id = "b4606e3118c94b25a0b99ff9815fc8ca"
-
-# KV namespace for rate limiting
-[[kv_namespaces]]
-binding = "RATE_LIMITS"
-id = "5258468969ef40ab9ba1252d0c764f2d"
+# KV namespaces are defined in environment-specific sections below
 
 # R2 bucket for asset storage
 [[r2_buckets]]
@@ -45,6 +32,10 @@ id = "b4606e3118c94b25a0b99ff9815fc8ca"
 
 [[env.production.kv_namespaces]]
 binding = "RATE_LIMITS"
+id = "5258468969ef40ab9ba1252d0c764f2d"
+
+[[env.production.kv_namespaces]]
+binding = "SESSION"
 id = "5258468969ef40ab9ba1252d0c764f2d"
 
 [[env.production.r2_buckets]]

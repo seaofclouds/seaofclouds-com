@@ -31,15 +31,27 @@ export const GET: APIRoute = async ({ url, locals }) => {
   try {
     // Exchange code for tokens
     const redirectUri = `${url.origin}/admin/auth/callback`;
+    console.log('Starting token exchange with redirectUri:', redirectUri);
+    console.log('Authorization code received:', code?.substring(0, 20) + '...');
+    
     const tokens = await authProvider.exchangeCodeForTokens(code, redirectUri);
     
     console.log('Adobe OAuth successful, tokens stored');
+    console.log('Token details:', {
+      hasAccessToken: !!tokens.accessToken,
+      hasRefreshToken: !!tokens.refreshToken,
+      expiresAt: tokens.expiresAt
+    });
     
     // Redirect to admin dashboard
     return Response.redirect(`${url.origin}/admin`);
     
   } catch (error) {
     console.error('OAuth token exchange failed:', error);
-    return Response.redirect(`${url.origin}/admin/auth/login?error=token_exchange_failed`);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack
+    });
+    return Response.redirect(`${url.origin}/admin/auth/login?error=token_exchange_failed&details=${encodeURIComponent(error.message)}`);
   }
 };

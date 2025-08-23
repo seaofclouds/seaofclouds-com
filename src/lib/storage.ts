@@ -147,19 +147,6 @@ export class KVStorage {
     await this.lightroom.put('sync:state', JSON.stringify(state));
   }
 
-  async getOAuthTokens(): Promise<{ accessToken?: string; refreshToken?: string; expiresAt?: string }> {
-    try {
-      const tokens = await this.oauth.get('tokens', 'json') as any;
-      return tokens || {};
-    } catch (error) {
-      console.error('Failed to get OAuth tokens:', error);
-      return {};
-    }
-  }
-
-  async setOAuthTokens(tokens: { accessToken: string; refreshToken: string; expiresAt: string }): Promise<void> {
-    await this.oauth.put('tokens', JSON.stringify(tokens));
-  }
 
   async getRateLimit(key: string): Promise<{ count: number; resetAt: number }> {
     try {
@@ -174,11 +161,101 @@ export class KVStorage {
   async setRateLimit(key: string, count: number, resetAt: number): Promise<void> {
     await this.rateLimits.put(key, JSON.stringify({ count, resetAt }));
   }
+
+  async getRateLimitStatus(): Promise<any> {
+    const hourlyKey = `lr_api_hourly:${Math.floor(Date.now() / (60 * 60 * 1000))}`;
+    const minuteKey = `lr_api_minute:${Math.floor(Date.now() / (60 * 1000))}`;
+    
+    const [hourlyLimit, minuteLimit] = await Promise.all([
+      this.getRateLimit(hourlyKey),
+      this.getRateLimit(minuteKey)
+    ]);
+    
+    return {
+      hourly: {
+        used: hourlyLimit.count,
+        remaining: 100 - hourlyLimit.count,
+        resetAt: new Date(hourlyLimit.resetAt).toISOString()
+      },
+      burst: {
+        used: minuteLimit.count,
+        remaining: 10 - minuteLimit.count,
+        resetAt: new Date(minuteLimit.resetAt).toISOString()
+      }
+    };
+  }
+
+  // OAuth Token Management
+  async getOAuthTokens(): Promise<any> {
+    try {
+      console.log('Storage: Attempting to get oauth_tokens from KV...');
+      const tokens = await this.oauth.get('oauth_tokens', 'json');
+      console.log('Storage: getOAuthTokens raw result:', tokens ? 'found' : 'null');
+      if (tokens) {
+        console.log('Storage: token keys found:', Object.keys(tokens));
+      }
+      return tokens || {};
+    } catch (error) {
+      console.error('Failed to get OAuth tokens:', error);
+      return {};
+    }
+  }
+
+  async setOAuthTokens(tokens: any): Promise<void> {
+    try {
+      console.log('Storage: About to save tokens to KV:', {
+        hasAccessToken: !!tokens.accessToken,
+        tokenKeys: Object.keys(tokens),
+        kvNamespace: this.oauth.constructor.name || 'unknown'
+      });
+      
+      const serialized = JSON.stringify(tokens);
+      console.log('Storage: Serialized token data length:', serialized.length);
+      
+      // Log the actual KV namespace binding info if available
+      console.log('Storage: KV namespace details:', {
+        hasOauth: !!this.oauth,
+        oauthType: typeof this.oauth,
+        oauthKeys: this.oauth ? Object.getOwnPropertyNames(this.oauth).slice(0, 3) : []
+      });
+      
+      await this.oauth.put('oauth_tokens', serialized);
+      console.log('Storage: OAuth tokens saved to KV successfully');
+      
+      // Add a small delay to ensure KV write completes
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify the save worked
+      const verify = await this.oauth.get('oauth_tokens');
+      console.log('Storage: Verification read result:', !!verify);
+      
+      // Try to parse and validate the retrieved data
+      if (verify) {
+        const parsed = JSON.parse(verify);
+        console.log('Storage: Verified token has accessToken:', !!parsed.accessToken);
+      }
+      
+    } catch (error) {
+      console.error('Storage: Failed to save OAuth tokens:', error);
+      console.error('Storage: Error details:', error.message, error.stack);
+      throw error;
+    }
+  }
+
+  async clearOAuthTokens(): Promise<void> {
+    try {
+      await this.oauth.delete('oauth_tokens');
+      console.log('OAuth tokens cleared successfully');
+    } catch (error) {
+      console.error('Failed to clear OAuth tokens:', error);
+      throw error;
+    }
+  }
 }
 
 export function createStorageHelpers(env: Env) {
   return {
-    r2: new R2Storage(env.ASSETS),
+    // r2: new R2Storage(env.ASSETS), // Temporarily disabled due to fetch error
     kv: new KVStorage(env.ADOBE_LIGHTROOM_TOKENS, env.ADOBE_OAUTH_TOKENS, env.RATE_LIMITS)
   };
 }

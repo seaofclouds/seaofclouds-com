@@ -22,9 +22,10 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 ### Key Features
 
 - **Public Site**: Minimalist galleries with fast, SEO-optimized rendering
-- **Admin UI**: Single-user management interface for publishing albums
+- **Admin UI**: Single-user management interface with Adobe OAuth authentication
 - **Cache-first API**: Lightroom data served from R2 with Adobe fallback
-- **Local Development**: Test data mode since Adobe OAuth doesn't work on localhost
+- **Dual Authentication**: Adobe OAuth in production, passwordless in development
+- **Test Data**: 13 realistic albums with Lorem Picsum images for local development
 
 ### Project Structure
 
@@ -32,8 +33,14 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 /
 ├── dist/              # Build output (Worker files)
 ├── src/
+│   ├── lib/           # Core libraries
+│   │   ├── auth.ts        # Adobe OAuth & dev auth
+│   │   ├── datasource.ts  # Data abstraction layer
+│   │   ├── lightroom-api.ts # Lightroom API client
+│   │   └── storage.ts     # R2 & KV abstractions
 │   ├── pages/         # Astro routes
 │   │   ├── admin/     # Admin interface
+│   │   │   └── auth/  # OAuth handlers
 │   │   └── api/       # API endpoints
 │   ├── types/         # TypeScript definitions
 │   └── worker.ts      # Worker entry point
@@ -51,9 +58,9 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 
 ### Environment
 
-- **Development**: Uses test data with Lorem Picsum images
-- **Production**: Adobe OAuth with Lightroom API integration
-- **Authentication**: ADMIN_PASSWORD for local dev, Adobe SSO in production
+- **Development**: Passwordless auth, test data with Lorem Picsum images, runs on localhost:8787
+- **Production**: Adobe OAuth with Lightroom Partner API integration at dev.seaofclouds.com
+- **Authentication**: No password required in dev, Adobe IMS OAuth 2.0 in production
 
 ## Deployment
 

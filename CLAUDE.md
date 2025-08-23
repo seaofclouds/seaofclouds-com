@@ -64,8 +64,10 @@ Abstracted as `DataSource = test | lightroom | flatfile`:
 ### Key Implementation Notes
 
 **Authentication:**
-- Production: Adobe OAuth for `/admin/*` (single user)
-- Local dev: `ADMIN_PASSWORD` gate (no localhost OAuth)
+- Production: Adobe OAuth 2.0 with IMS endpoints for `/admin/*` (single user)
+- Local dev: Passwordless authentication (simplified for development)
+- OAuth scopes: `openid,AdobeID,lr_partner_apis,lr_partner_rendition_apis,offline_access`
+- Token refresh implemented with automatic renewal
 
 **Caching Strategy:**
 - JSON: `Cache-Control: public, max-age=3600` with ETag
@@ -180,3 +182,5 @@ Test Images (local dev placeholders)
 - https://picsum.photos/
 - https://github.com/DMarby/picsum-photos
 - refer to - https://developer.adobe.com/developer-console/docs/guides/authentication/UserAuthentication/implementation/ when working on Adobe OAuth or stuck
+- check @Planning-Chat.md before beginning a new task.
+- when user confirms task is complete, update @Planning-Chat.md and prepare a git commit and push to Github

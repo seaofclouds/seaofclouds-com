@@ -26,11 +26,24 @@ export class LightroomApiClient {
   private static readonly BURST_LIMIT = 10; // requests per minute
   private static readonly RETRY_DELAYS = [1000, 2000, 5000, 10000]; // Exponential backoff
 
+  private auth: AdobeOAuth;
+  private storage: ReturnType<typeof createStorageHelpers>;
+
   constructor(
-    private auth: AdobeOAuth,
     private env: Env,
-    private storage = createStorageHelpers(env)
-  ) {}
+    storage?: ReturnType<typeof createStorageHelpers>
+  ) {
+    this.storage = storage || createStorageHelpers(env);
+    this.auth = new AdobeOAuth(env);
+  }
+
+  /**
+   * Strip the while(1){} prefix from Lightroom API responses
+   */
+  private stripWhile1Prefix(text: string): string {
+    const while1Regex = /^while\s*\(\s*1\s*\)\s*{\s*}\s*/;
+    return text.replace(while1Regex, '');
+  }
 
   /**
    * Make authenticated request to Lightroom API with rate limiting
@@ -45,6 +58,12 @@ export class LightroomApiClient {
     
     const url = endpoint.startsWith('http') ? endpoint : `${LightroomApiClient.BASE_URL}${endpoint}`;
     
+    // Debug logging
+    console.log(`[LR API] Making request to: ${url}`);
+    console.log(`[LR API] Has access token: ${!!accessToken}`);
+    console.log(`[LR API] Token length: ${accessToken?.length || 0}`);
+    console.log(`[LR API] Client ID: ${this.env.ADOBE_CLIENT_ID?.substring(0, 8)}...`);
+    
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -54,6 +73,9 @@ export class LightroomApiClient {
         ...options.headers
       }
     });
+    
+    console.log(`[LR API] Response status: ${response.status}`);
+    console.log(`[LR API] Response headers:`, Object.fromEntries(response.headers.entries()));
 
     // Update rate limit info from response headers
     await this.updateRateLimitFromResponse(response);
@@ -61,16 +83,40 @@ export class LightroomApiClient {
     if (response.status === 429) {
       // Rate limited - throw with retry info
       const retryAfter = response.headers.get('Retry-After');
-      throw new Error(`Rate limited. Retry after ${retryAfter || '60'} seconds`);
+      const error: any = new Error(`Rate limited. Retry after ${retryAfter || '60'} seconds`);
+      error.status = 429;
+      error.retryAfter = retryAfter;
+      throw error;
+    }
+
+    if (response.status === 401) {
+      const error: any = new Error('Authentication failed');
+      error.status = 401;
+      throw error;
     }
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Lightroom API error (${response.status}):`, errorText);
-      throw new Error(`Lightroom API error: ${response.status} ${errorText}`);
+      const error: any = new Error(`Lightroom API error: ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
 
-    return await response.json() as T;
+    // Get response text and strip while(1){} prefix before parsing JSON
+    const responseText = await response.text();
+    const cleanedText = this.stripWhile1Prefix(responseText);
+    
+    if (!cleanedText || cleanedText.length === 0) {
+      return {} as T; // Return empty object for empty responses
+    }
+
+    try {
+      return JSON.parse(cleanedText) as T;
+    } catch (e) {
+      console.error('Failed to parse JSON response:', cleanedText.substring(0, 200));
+      throw new Error('Invalid JSON response from Lightroom API');
+    }
   }
 
   /**
@@ -150,6 +196,56 @@ export class LightroomApiClient {
     }
 
     throw new Error('Max retries exceeded');
+  }
+
+  /**
+   * Get user account info
+   */
+  async getAccount(): Promise<any> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<any>('/account');
+      return response;
+    });
+  }
+
+  /**
+   * Get the user's catalog
+   */
+  async getCatalog(): Promise<any> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<any>('/catalog');
+      return response;
+    });
+  }
+
+  /**
+   * List albums with optional filters
+   */
+  async listAlbums(catalogId: string, options: { limit?: number; cursor?: string } = {}): Promise<LightroomApiResponse<any>> {
+    return this.retryRequest(async () => {
+      let endpoint = `/catalogs/${catalogId}/albums?subtype=collection`;
+      
+      if (options.limit) {
+        endpoint += `&limit=${options.limit}`;
+      }
+      
+      if (options.cursor) {
+        endpoint += `&after=${options.cursor}`;
+      }
+
+      const response = await this.makeRequest<any>(endpoint);
+      return response;
+    });
+  }
+
+  /**
+   * Get album details
+   */
+  async getAlbum(albumId: string): Promise<any> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<any>(`/albums/${albumId}`);
+      return response;
+    });
   }
 
   /**
