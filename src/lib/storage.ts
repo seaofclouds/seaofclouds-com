@@ -83,6 +83,50 @@ export class R2Storage {
       return null;
     }
   }
+
+  async putBinary(path: string, data: ArrayBuffer | Uint8Array): Promise<void> {
+    const contentType = path.endsWith('.jpg') || path.endsWith('.jpeg') ? 'image/jpeg' :
+                       path.endsWith('.png') ? 'image/png' :
+                       'application/octet-stream';
+    
+    await this.bucket.put(path, data, {
+      httpMetadata: {
+        contentType,
+        cacheControl: 'public, max-age=31536000, immutable' // 1 year cache for images
+      }
+    });
+  }
+
+  async exists(path: string): Promise<boolean> {
+    try {
+      const object = await this.bucket.head(path);
+      return !!object;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async putJSON(path: string, data: any): Promise<void> {
+    await this.bucket.put(path, JSON.stringify(data, null, 2), {
+      httpMetadata: {
+        contentType: 'application/json',
+        cacheControl: 'public, max-age=3600'
+      }
+    });
+  }
+
+  async getJSON(path: string): Promise<any> {
+    try {
+      const object = await this.bucket.get(path);
+      if (!object) return null;
+      
+      const text = await object.text();
+      return JSON.parse(text);
+    } catch (error) {
+      console.error(`Failed to get JSON from ${path}:`, error);
+      return null;
+    }
+  }
 }
 
 export class KVStorage {
@@ -254,8 +298,16 @@ export class KVStorage {
 }
 
 export function createStorageHelpers(env: Env) {
+  const r2 = new R2Storage(env.ASSETS);
+  const kv = new KVStorage(env.ADOBE_LIGHTROOM_TOKENS, env.ADOBE_OAUTH_TOKENS, env.RATE_LIMITS);
+  
   return {
-    // r2: new R2Storage(env.ASSETS), // Temporarily disabled due to fetch error
-    kv: new KVStorage(env.ADOBE_LIGHTROOM_TOKENS, env.ADOBE_OAUTH_TOKENS, env.RATE_LIMITS)
+    r2,
+    kv,
+    // Expose KV methods at top level for convenience
+    getRateLimitStatus: () => kv.getRateLimitStatus(),
+    getOAuthTokens: () => kv.getOAuthTokens(),
+    setOAuthTokens: (tokens: any) => kv.setOAuthTokens(tokens),
+    clearOAuthTokens: () => kv.clearOAuthTokens()
   };
 }

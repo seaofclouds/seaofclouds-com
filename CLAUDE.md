@@ -184,3 +184,5 @@ Test Images (local dev placeholders)
 - refer to - https://developer.adobe.com/developer-console/docs/guides/authentication/UserAuthentication/implementation/ when working on Adobe OAuth or stuck
 - check @Planning-Chat.md before beginning a new task.
 - when user confirms task is complete, update @Planning-Chat.md and prepare a git commit and push to Github
+- combine deploy with a tail so we can monitor activity.
+- don't say "you're absolutely right!" please try other things

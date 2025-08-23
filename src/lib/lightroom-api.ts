@@ -21,9 +21,9 @@ export class LightroomApiClient {
   private static readonly BASE_URL = 'https://lr.adobe.io/v2';
   private static readonly COLLECTION_SET_ID = '07ba0fcb09714671bc71ab7ba5a091e7'; // From CLAUDE.md
   
-  // Rate limiting: Conservative approach for Adobe APIs
-  private static readonly DEFAULT_RATE_LIMIT = 100; // requests per hour
-  private static readonly BURST_LIMIT = 10; // requests per minute
+  // Rate limiting: Adobe allows reasonable usage - 100/hour is per-user quota
+  private static readonly DEFAULT_RATE_LIMIT = 100; // requests per hour per user
+  private static readonly BURST_LIMIT = 30; // can burst higher for metadata fetching
   private static readonly RETRY_DELAYS = [1000, 2000, 5000, 10000]; // Exponential backoff
 
   private auth: AdobeOAuth;
@@ -50,7 +50,8 @@ export class LightroomApiClient {
    */
   private async makeRequest<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    parseJson: boolean = true
   ): Promise<T> {
     await this.checkRateLimit();
 
@@ -101,6 +102,11 @@ export class LightroomApiClient {
       const error: any = new Error(`Lightroom API error: ${response.status}`);
       error.status = response.status;
       throw error;
+    }
+
+    // Handle binary responses (like renditions)
+    if (!parseJson) {
+      return await response.arrayBuffer() as T;
     }
 
     // Get response text and strip while(1){} prefix before parsing JSON
@@ -249,6 +255,69 @@ export class LightroomApiClient {
   }
 
   /**
+   * Get asset details
+   */
+  async getAsset(catalogId: string, assetId: string): Promise<any> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<any>(`/catalogs/${catalogId}/assets/${assetId}`);
+      return response;
+    });
+  }
+
+  /**
+   * Get list of assets in an album
+   */
+  async getAlbumAssets(albumId: string, options: { limit?: number; cursor?: string } = {}): Promise<LightroomApiResponse<any>> {
+    return this.retryRequest(async () => {
+      let endpoint = `/albums/${albumId}/assets`;
+      
+      if (options.limit) {
+        endpoint += `?limit=${options.limit}`;
+      }
+      
+      if (options.cursor) {
+        endpoint += `${options.limit ? '&' : '?'}after=${options.cursor}`;
+      }
+
+      const response = await this.makeRequest<any>(endpoint);
+      return response;
+    });
+  }
+
+  /**
+   * Generate a rendition for an asset
+   */
+  async generateRendition(catalogId: string, assetId: string, renditionType: string): Promise<any> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<any>(
+        `/catalogs/${catalogId}/assets/${assetId}/renditions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ rendition_type: renditionType })
+        }
+      );
+      return response;
+    });
+  }
+
+  /**
+   * Get a rendition (image) for an asset
+   */
+  async getAssetRendition(catalogId: string, assetId: string, renditionType: string): Promise<ArrayBuffer> {
+    return this.retryRequest(async () => {
+      const response = await this.makeRequest<ArrayBuffer>(
+        `/catalogs/${catalogId}/assets/${assetId}/renditions/${renditionType}`,
+        { method: 'GET' },
+        false // Don't parse as JSON
+      );
+      return response;
+    });
+  }
+
+  /**
    * Get albums from the specified collection set
    */
   async getAlbums(cursor?: string): Promise<LightroomApiResponse<Album>> {
@@ -324,9 +393,9 @@ export class LightroomApiClient {
   }
 
   /**
-   * Get asset details
+   * Get asset details (formatted for our data model)
    */
-  async getAsset(assetId: string): Promise<Asset> {
+  async getAssetFormatted(assetId: string): Promise<Asset> {
     return this.retryRequest(async () => {
       const response = await this.makeRequest<any>(`/assets/${assetId}`);
       
