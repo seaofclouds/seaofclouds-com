@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Admin-specific component styles */
+@layer components {
+  .admin-card {
+    @apply bg-white rounded-lg shadow-sm border border-raven-200 p-6;
+  }
+  
+  .admin-button {
+    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200;
+  }
+  
+  .admin-button-primary {
+    @apply admin-button bg-lemon-grass-600 text-white hover:bg-lemon-grass-700 focus:ring-2 focus:ring-lemon-grass-500 focus:ring-offset-2;
+  }
+  
+  .admin-button-secondary {
+    @apply admin-button bg-raven-100 text-raven-700 hover:bg-raven-200 focus:ring-2 focus:ring-raven-500 focus:ring-offset-2;
+  }
+  
+  .admin-button-success {
+    @apply admin-button bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2;
+  }
+  
+  .admin-button-draft {
+    @apply admin-button bg-raven-400 text-white hover:bg-raven-500 focus:ring-2 focus:ring-raven-400 focus:ring-offset-2;
+  }
+  
+  .admin-input {
+    @apply block w-full rounded-md border-raven-300 shadow-sm focus:border-lemon-grass-500 focus:ring-lemon-grass-500;
+  }
+  
+  .admin-badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .admin-badge-success {
+    @apply admin-badge bg-green-100 text-green-800;
+  }
+  
+  .admin-badge-draft {
+    @apply admin-badge bg-raven-100 text-raven-800;
+  }
+  
+  .admin-badge-env-dev {
+    @apply admin-badge bg-blue-100 text-blue-800;
+  }
+  
+  .admin-badge-env-prod {
+    @apply admin-badge bg-purple-100 text-purple-800;
+  }
+  
+  .admin-status-success {
+    @apply bg-green-50 border border-green-200 text-green-700 p-3 rounded-md;
+  }
+  
+  .admin-status-error {
+    @apply bg-red-50 border border-red-200 text-red-700 p-3 rounded-md;
+  }
+  
+  .admin-status-loading {
+    @apply bg-blue-50 border border-blue-200 text-blue-700 p-3 rounded-md;
+  }
+}

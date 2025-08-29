@@ -23,8 +23,8 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 
 - **Public Site**: Minimalist galleries with fast, SEO-optimized rendering
 - **Admin UI**: Single-user management interface with Adobe OAuth authentication
-- **Cache-first API**: Lightroom data served from R2 with Adobe fallback
-- **Dual Authentication**: Adobe OAuth in production, passwordless in development
+- **Cache-first API**: Lightroom data served from R2 with Adobe fallback  
+- **Adobe OAuth**: Full OAuth 2.0 integration with IMS endpoints for Lightroom API access
 - **Test Data**: 13 realistic albums with Lorem Picsum images for local development
 
 ### Project Structure
@@ -40,8 +40,9 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 │   │   └── storage.ts     # R2 & KV abstractions
 │   ├── pages/         # Astro routes
 │   │   ├── admin/     # Admin interface
-│   │   │   └── auth/  # OAuth handlers
-│   │   └── api/       # API endpoints
+│   │   │   ├── auth/  # OAuth handlers (/login, /callback, /logout)
+│   │   │   └── api/   # Protected admin API endpoints
+│   │   └── [slug].astro # Public album pages
 │   ├── types/         # TypeScript definitions
 │   └── worker.ts      # Worker entry point
 ├── astro.config.mjs   # Astro configuration
@@ -56,11 +57,17 @@ This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets.
 | `npm run build` | Build for production |
 | `npm run deploy` | Build and deploy to Cloudflare |
 
+### Authentication Routes
+
+- **`/admin/auth/login`** - Initiates Adobe OAuth flow (redirects to Adobe IMS)
+- **`/admin/auth/callback`** - OAuth callback handler for token exchange
+- **`/admin/auth/logout`** - Revokes tokens and redirects to root domain
+
 ### Environment
 
-- **Development**: Passwordless auth, test data with Lorem Picsum images, runs on localhost:8787
-- **Production**: Adobe OAuth with Lightroom Partner API integration at dev.seaofclouds.com
-- **Authentication**: No password required in dev, Adobe IMS OAuth 2.0 in production
+- **Development**: Adobe OAuth with shared memory token storage, runs on https://localhost:8787 
+- **Production**: Adobe OAuth with KV token storage, deployed at dev.seaofclouds.com
+- **Test Data**: Lorem Picsum images for development, real Lightroom data in production
 
 ## Deployment
 

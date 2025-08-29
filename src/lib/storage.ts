@@ -12,7 +12,8 @@ export class R2Storage {
 
   async getAlbumsMetadata(): Promise<Album[]> {
     try {
-      const object = await this.bucket.get('albums/metadata.json');
+      const bucket = this.ensureBucket();
+      const object = await bucket.get('albums/metadata.json');
       if (!object) return [];
       
       const data = await object.json() as { albums: Album[] };
@@ -24,7 +25,8 @@ export class R2Storage {
   }
 
   async setAlbumsMetadata(albums: Album[]): Promise<void> {
-    await this.bucket.put('albums/metadata.json', JSON.stringify({ albums }, null, 2), {
+    const bucket = this.ensureBucket();
+    await bucket.put('albums/metadata.json', JSON.stringify({ albums }, null, 2), {
       httpMetadata: {
         contentType: 'application/json',
         cacheControl: 'public, max-age=3600'
@@ -34,7 +36,8 @@ export class R2Storage {
 
   async getAlbumDetail(albumId: string): Promise<Album | null> {
     try {
-      const object = await this.bucket.get(`albums/${albumId}/metadata.json`);
+      const bucket = this.ensureBucket();
+      const object = await bucket.get(`albums/${albumId}/metadata.json`);
       if (!object) return null;
       
       return await object.json() as Album;
@@ -45,7 +48,8 @@ export class R2Storage {
   }
 
   async setAlbumDetail(album: Album): Promise<void> {
-    await this.bucket.put(`albums/${album.id}/metadata.json`, JSON.stringify(album, null, 2), {
+    const bucket = this.ensureBucket();
+    await bucket.put(`albums/${album.id}/metadata.json`, JSON.stringify(album, null, 2), {
       httpMetadata: {
         contentType: 'application/json',
         cacheControl: 'public, max-age=3600'
@@ -55,7 +59,8 @@ export class R2Storage {
 
   async getAssetMetadata(assetId: string): Promise<Asset | null> {
     try {
-      const object = await this.bucket.get(`assets/${assetId}/metadata.json`);
+      const bucket = this.ensureBucket();
+      const object = await bucket.get(`assets/${assetId}/metadata.json`);
       if (!object) return null;
       
       return await object.json() as Asset;
@@ -66,7 +71,8 @@ export class R2Storage {
   }
 
   async setAssetMetadata(asset: Asset): Promise<void> {
-    await this.bucket.put(`assets/${asset.id}/metadata.json`, JSON.stringify(asset, null, 2), {
+    const bucket = this.ensureBucket();
+    await bucket.put(`assets/${asset.id}/metadata.json`, JSON.stringify(asset, null, 2), {
       httpMetadata: {
         contentType: 'application/json',
         cacheControl: 'public, max-age=86400'
@@ -76,7 +82,8 @@ export class R2Storage {
 
   async getRendition(assetId: string, size: string): Promise<ReadableStream | null> {
     try {
-      const object = await this.bucket.get(`assets/${assetId}/renditions/${size}.jpg`);
+      const bucket = this.ensureBucket();
+      const object = await bucket.get(`assets/${assetId}/renditions/${size}.jpg`);
       return object?.body || null;
     } catch (error) {
       console.error(`Failed to fetch rendition ${assetId}/${size}:`, error);
@@ -89,7 +96,8 @@ export class R2Storage {
                        path.endsWith('.png') ? 'image/png' :
                        'application/octet-stream';
     
-    await this.bucket.put(path, data, {
+    const bucket = this.ensureBucket();
+    await bucket.put(path, data, {
       httpMetadata: {
         contentType,
         cacheControl: 'public, max-age=31536000, immutable' // 1 year cache for images
@@ -99,7 +107,8 @@ export class R2Storage {
 
   async exists(path: string): Promise<boolean> {
     try {
-      const object = await this.bucket.head(path);
+      const bucket = this.ensureBucket();
+      const object = await bucket.head(path);
       return !!object;
     } catch (error) {
       return false;
@@ -107,7 +116,8 @@ export class R2Storage {
   }
 
   async putJSON(path: string, data: any): Promise<void> {
-    await this.bucket.put(path, JSON.stringify(data, null, 2), {
+    const bucket = this.ensureBucket();
+    await bucket.put(path, JSON.stringify(data, null, 2), {
       httpMetadata: {
         contentType: 'application/json',
         cacheControl: 'public, max-age=3600'
@@ -117,7 +127,8 @@ export class R2Storage {
 
   async getJSON(path: string): Promise<any> {
     try {
-      const object = await this.bucket.get(path);
+      const bucket = this.ensureBucket();
+      const object = await bucket.get(path);
       if (!object) return null;
       
       const text = await object.text();
@@ -298,16 +309,20 @@ export class KVStorage {
 }
 
 export function createStorageHelpers(env: Env) {
-  const r2 = new R2Storage(env.ASSETS);
-  const kv = new KVStorage(env.ADOBE_LIGHTROOM_TOKENS, env.ADOBE_OAUTH_TOKENS, env.RATE_LIMITS);
+  const r2 = new R2Storage(env.R2_STORAGE);
+  
+  // In development, KV namespaces might be undefined - create null storage
+  const kv = env.ADOBE_OAUTH_TOKENS && env.ADOBE_LIGHTROOM_TOKENS && env.RATE_LIMITS 
+    ? new KVStorage(env.ADOBE_LIGHTROOM_TOKENS, env.ADOBE_OAUTH_TOKENS, env.RATE_LIMITS)
+    : null;
   
   return {
     r2,
     kv,
     // Expose KV methods at top level for convenience
-    getRateLimitStatus: () => kv.getRateLimitStatus(),
-    getOAuthTokens: () => kv.getOAuthTokens(),
-    setOAuthTokens: (tokens: any) => kv.setOAuthTokens(tokens),
-    clearOAuthTokens: () => kv.clearOAuthTokens()
+    getRateLimitStatus: () => kv?.getRateLimitStatus() || Promise.resolve({ hourly: { used: 0, remaining: 100, resetAt: new Date().toISOString() }, burst: { used: 0, remaining: 10, resetAt: new Date().toISOString() } }),
+    getOAuthTokens: () => kv?.getOAuthTokens() || Promise.resolve({}),
+    setOAuthTokens: (tokens: any) => kv?.setOAuthTokens(tokens) || Promise.resolve(),
+    clearOAuthTokens: () => kv?.clearOAuthTokens() || Promise.resolve()
   };
 }

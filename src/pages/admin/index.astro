@@ -1,33 +1,26 @@
 ---
 import { createAuthProvider } from '../../lib/auth';
+import '../../styles/admin.css';
 
 export const prerender = false;
 
 const env = Astro.locals.runtime.env as Env;
 const authProvider = createAuthProvider(env);
 
-// Check authentication
+// Check authentication - Force Adobe OAuth for testing
 let isAuthenticated = false;
 let authError = '';
 
 try {
-  if (env.ENVIRONMENT === 'production') {
-    // Adobe OAuth check
-    isAuthenticated = await (authProvider as any).isAuthenticated();
-  } else {
-    // Development session check - don't need storage for simple session validation
-    const sessionCookie = Astro.cookies.get('admin_session');
-    if (sessionCookie) {
-      isAuthenticated = await (authProvider as any).isAuthenticated(sessionCookie.value);
-    }
-  }
+  // Force Adobe OAuth check regardless of environment
+  isAuthenticated = await (authProvider as any).isAuthenticated();
 } catch (error) {
   authError = error instanceof Error ? error.message : 'Authentication error';
 }
 
-// Redirect to login if not authenticated
+// Redirect to Adobe OAuth if not authenticated
 if (!isAuthenticated) {
-  return Astro.redirect('/admin/auth/login');
+  return Astro.redirect('/admin/auth/adobe');
 }
 
 // Get real stats from R2 and KV
@@ -43,8 +36,34 @@ let stats = {
 let albums: any[] = [];
 let shouldAutoSync = true; // Always try to load albums via JS
 
-// Skip server-side album loading to avoid R2 errors during SSR
-// Albums will be loaded via JavaScript after page loads
+// Try to load albums server-side in production
+const storage = createStorageHelpers(env);
+let albumFlags: Record<string, any> = {};
+
+try {
+  if (env.ENVIRONMENT === 'production') {
+    const albumsIndex = await storage.r2.getJSON('albums/metadata.json');
+    if (albumsIndex && albumsIndex.albums) {
+      albums = albumsIndex.albums;
+      stats.totalAlbums = albumsIndex.totalCount || albums.length;
+      stats.lastSync = albumsIndex.syncedAt;
+      shouldAutoSync = false; // Don't auto-load if we already have data
+      
+      // Pre-load all album flags
+      for (const album of albums) {
+        try {
+          const flags = await storage.kv.get(`flags:${album.id}`, 'json');
+          albumFlags[album.id] = flags?.public || false;
+        } catch (error) {
+          albumFlags[album.id] = false;
+        }
+      }
+    }
+  }
+} catch (error) {
+  console.error('Failed to load albums server-side:', error);
+  // Continue with empty albums array and let JS load them
+}
 ---
 
 <!DOCTYPE html>
@@ -56,116 +75,309 @@ let shouldAutoSync = true; // Always try to load albums via JS
   <meta name="build-timestamp" content={new Date().toISOString()}>
   <meta name="build-date" content={new Date().toLocaleDateString()} data-build-time={new Date().toLocaleString()}>
   <style>
-    body { 
-      font-family: system-ui, sans-serif; 
-      background: #f5f7f8; 
-      margin: 0; 
-      padding: 20px; 
-      min-height: 100vh; 
-      color: #50565f; 
+    /* Inline critical CSS for immediate loading */
+    body {
+      background-color: #f5f7f8;
+      color: #50565f;
+      min-height: 100vh;
+      padding: 1.25rem;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      margin: 0;
     }
-    .container { max-width: 1200px; margin: 0 auto; }
-    .card { 
-      background: white; 
-      padding: 20px; 
-      border-radius: 8px; 
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1); 
-      margin-bottom: 20px; 
+    .container {
+      max-width: 80rem;
+      margin: 0 auto;
     }
-    .header { display: flex; justify-content: space-between; align-items: center; }
-    .badge { 
-      background: #f3e5f5; 
-      color: #7b1fa2; 
-      padding: 4px 8px; 
-      border-radius: 4px; 
-      font-size: 12px; 
+    .card {
+      background-color: white;
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      border: 1px solid #dee4e7;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
     }
-    .button { 
-      padding: 10px 16px; 
-      border-radius: 6px; 
-      border: none; 
-      cursor: pointer; 
-      text-decoration: none; 
+    .flex {
+      display: flex;
+    }
+    .justify-between {
+      justify-content: space-between;
+    }
+    .items-center {
+      align-items: center;
+    }
+    .gap-3 {
+      gap: 0.75rem;
+    }
+    .gap-6 {
+      gap: 1.5rem;
+    }
+    .mb-6 {
+      margin-bottom: 1.5rem;
+    }
+    .mb-4 {
+      margin-bottom: 1rem;
+    }
+    .text-2xl {
+      font-size: 1.5rem;
+      line-height: 2rem;
+    }
+    .text-xl {
+      font-size: 1.25rem;
+      line-height: 1.75rem;
+    }
+    .text-lg {
+      font-size: 1.125rem;
+      line-height: 1.75rem;
+    }
+    .text-sm {
+      font-size: 0.875rem;
+      line-height: 1.25rem;
+    }
+    .text-xs {
+      font-size: 0.75rem;
+      line-height: 1rem;
+    }
+    .font-bold {
+      font-weight: 700;
+    }
+    .font-semibold {
+      font-weight: 600;
+    }
+    .font-medium {
+      font-weight: 500;
+    }
+    .grid {
+      display: grid;
+    }
+    .grid-cols-1 {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+    @media (min-width: 1024px) {
+      .lg\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    .w-full {
+      width: 100%;
+    }
+    .w-10 {
+      width: 2.5rem;
+    }
+    .py-3 {
+      padding-top: 0.75rem;
+      padding-bottom: 0.75rem;
+    }
+    .py-2 {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+    .py-1 {
+      padding-top: 0.25rem;
+      padding-bottom: 0.25rem;
+    }
+    .px-2 {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+    }
+    .px-3 {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+    .pl-6 {
+      padding-left: 1.5rem;
+    }
+    .space-y-3 > * + * {
+      margin-top: 0.75rem;
+    }
+    .border-b {
+      border-bottom-width: 1px;
+    }
+    .border-raven-200 {
+      border-color: #dee4e7;
+    }
+    .border-raven-100 {
+      border-color: #edf0f2;
+    }
+    .text-raven-900 {
+      color: #50565f;
+    }
+    .text-raven-700 {
+      color: #6f7989;
+    }
+    .text-raven-600 {
+      color: #8792a4;
+    }
+    .text-raven-500 {
+      color: #9daab7;
+    }
+    .text-lemon-grass-600 {
+      color: #525843;
+    }
+    .bg-raven-50 {
+      background-color: #f5f7f8;
+    }
+    .hover\:bg-raven-50:hover {
+      background-color: #f5f7f8;
+    }
+    .text-blue-700 {
+      color: #1d4ed8;
+    }
+    .text-purple-700 {
+      color: #7c3aed;
+    }
+    .button {
+      padding: 0.5rem 1rem;
+      border-radius: 0.375rem;
+      font-weight: 500;
+      text-decoration: none;
       display: inline-block;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
     }
-    .btn-primary { background: #6b7158; color: white; }
-    .btn-secondary { background: #9daab7; color: white; }
-    .btn-success { background: #28a745; color: white; }
-    .btn-draft { background: #6c757d; color: white; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-    .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
-    .album-item { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 15px; 
-      background: #f5f7f8; 
-      border-radius: 6px; 
-      border-left: 4px solid #ddd; 
-      margin-bottom: 10px;
+    .btn-primary {
+      background-color: #525843;
+      color: white;
     }
-    .album-item.published { border-left-color: #28a745; }
-    .status { padding: 10px; border-radius: 4px; margin-top: 10px; display: none; }
-    .status.success { background: #d4edda; color: #155724; }
-    .status.error { background: #f8d7da; color: #721c24; }
-    .status.loading { background: #d1ecf1; color: #0c5460; }
-    
-    /* Table styles */
-    .table-container { overflow-x: auto; }
-    .albums-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-    .albums-table th, .albums-table td { 
-      text-align: left; 
-      padding: 12px 8px; 
-      border-bottom: 1px solid #dee4e7; 
+    .btn-primary:hover {
+      background-color: #424735;
     }
-    .albums-table th { 
-      background: #f5f7f8; 
-      font-weight: 600; 
-      cursor: pointer; 
+    .btn-secondary {
+      background-color: #edf0f2;
+      color: #6f7989;
+    }
+    .btn-secondary:hover {
+      background-color: #dee4e7;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.625rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .badge-env-prod {
+      background-color: #ede9fe;
+      color: #7c2d12;
+    }
+    .badge-env-dev {
+      background-color: #dbeafe;
+      color: #1e40af;
+    }
+    .input {
+      display: block;
+      width: 100%;
+      border-radius: 0.375rem;
+      border: 1px solid #c9d2d8;
+      box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      padding: 0.5rem 0.75rem;
+    }
+    .input:focus {
+      border-color: #525843;
+      outline: none;
+      ring: 2px solid #525843;
+    }
+    .overflow-x-auto {
+      overflow-x: auto;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .table th,
+    .table td {
+      text-align: left;
+      padding: 0.75rem 0.5rem;
+      border-bottom: 1px solid #edf0f2;
+    }
+    .table th {
+      font-weight: 600;
+      color: #6f7989;
+      cursor: pointer;
       user-select: none;
-      position: relative;
     }
-    .albums-table th:hover { background: #edf0f2; }
-    .albums-table th.sortable::after { 
-      content: '↕️'; 
-      opacity: 0.5; 
-      margin-left: 5px; 
-      font-size: 12px;
+    .table th:hover {
+      background-color: #f5f7f8;
     }
-    .albums-table th.sort-asc::after { content: '↑'; opacity: 1; }
-    .albums-table th.sort-desc::after { content: '↓'; opacity: 1; }
-    .albums-table tbody tr:hover { background: #f5f7f8; }
-    
-    /* Filter input */
-    .filter-input { 
-      width: 100%; 
-      padding: 8px 12px; 
-      border: 1px solid #c9d2d8; 
-      border-radius: 4px; 
-      margin-bottom: 15px;
+    .table tbody tr:hover {
+      background-color: #f5f7f8;
     }
-    
-    /* Bulk actions */
-    .bulk-actions { 
-      display: flex; 
-      gap: 10px; 
-      align-items: center; 
-      margin: 15px 0; 
-      padding: 10px; 
-      background: #f5f7f8; 
-      border-radius: 4px; 
+    .checkbox {
+      border-radius: 0.25rem;
+      border: 1px solid #c9d2d8;
+      color: #525843;
     }
-    .bulk-actions.hidden { display: none; }
+    .checkbox:focus {
+      ring: 2px solid #525843;
+    }
+    .font-mono {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    .capitalize {
+      text-transform: capitalize;
+    }
+    .cursor-pointer {
+      cursor: pointer;
+    }
+    .hidden {
+      display: none;
+    }
+    .flex-col {
+      flex-direction: column;
+    }
+    .rounded-md {
+      border-radius: 0.375rem;
+    }
+    .p-3 {
+      padding: 0.75rem;
+    }
+    .ml-1 {
+      margin-left: 0.25rem;
+    }
+    .ml-2 {
+      margin-left: 0.5rem;
+    }
+    .mr-2 {
+      margin-right: 0.5rem;
+    }
+    .opacity-50 {
+      opacity: 0.5;
+    }
+    .opacity-100 {
+      opacity: 1;
+    }
+    .status-success {
+      background-color: #d1fae5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+      padding: 0.75rem;
+      border-radius: 0.375rem;
+    }
+    .status-error {
+      background-color: #fee2e2;
+      border: 1px solid #fca5a5;
+      color: #991b1b;
+      padding: 0.75rem;
+      border-radius: 0.375rem;
+    }
+    .status-loading {
+      background-color: #dbeafe;
+      border: 1px solid #93c5fd;
+      color: #1e40af;
+      padding: 0.75rem;
+      border-radius: 0.375rem;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <!-- Header -->
     <header class="card">
-      <div class="header">
-        <h1>Sea of Clouds Admin</h1>
-        <div>
-          <span class="badge">
+      <div class="flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-raven-900">Sea of Clouds Admin</h1>
+        <div class="flex items-center gap-3">
+          <span class={stats.environment === 'production' ? 'badge badge-env-prod' : 'badge badge-env-dev'}>
             {stats.environment.toUpperCase()}
           </span>
           <a href="/admin/auth/logout" class="button btn-secondary">Logout</a>
@@ -174,36 +386,35 @@ let shouldAutoSync = true; // Always try to load albums via JS
     </header>
 
     <!-- Dashboard Grid -->
-    <div class="grid">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
       <!-- Overview Card -->
       <div class="card">
-        <h2>Overview</h2>
-        <div>
-          <div class="stat">
-            <span>Total Albums</span>
-            <strong>{stats.totalAlbums}</strong>
+        <h2 class="text-lg font-semibold text-raven-900 mb-4">Overview</h2>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center py-2 border-b border-raven-200">
+            <span class="text-raven-600">Total Albums</span>
+            <strong class="text-raven-900" data-stat="total-albums">{stats.totalAlbums}</strong>
           </div>
-          <div class="stat">
-            <span>Public Albums</span>
-            <strong>{stats.publicAlbums}</strong>
+          <div class="flex justify-between items-center py-2 border-b border-raven-200">
+            <span class="text-raven-600">Public Albums</span>
+            <strong class="text-raven-900" data-stat="public-albums">{stats.publicAlbums}</strong>
           </div>
-          <div class="stat">
-            <span>Environment</span>
-            <strong>{stats.environment}</strong>
+          <div class="flex justify-between items-center py-2 border-b border-raven-200">
+            <span class="text-raven-600">Environment</span>
+            <strong class="text-raven-900">{stats.environment}</strong>
           </div>
-          <div class="stat">
-            <span>Last Sync</span>
-            <strong>{stats.lastSync ? new Date(stats.lastSync).toLocaleString() : 'Never'}</strong>
+          <div class="flex justify-between items-center py-2">
+            <span class="text-raven-600">Last Sync</span>
+            <strong class="text-raven-900" data-stat="last-sync">{stats.lastSync ? new Date(stats.lastSync).toLocaleString() : 'Never'}</strong>
           </div>
         </div>
       </div>
 
-      <!-- Quick Sync Card -->
+      <!-- Sync Status Card -->
       <div class="card">
-        <h2>Quick Sync</h2>
-        <p>Sync albums from Lightroom to R2 cache.</p>
-        <button onclick="syncAlbums()" class="button btn-primary">Sync Albums</button>
-        <div id="sync-status" class="status">
+        <h2 class="text-lg font-semibold text-raven-900 mb-4">Sync Status</h2>
+        <p class="text-raven-600 mb-4">Albums sync automatically from Lightroom.</p>
+        <div id="sync-status" class="hidden">
         </div>
       </div>
 
@@ -212,80 +423,154 @@ let shouldAutoSync = true; // Always try to load albums via JS
     {albums.length > 0 && (
       <!-- Albums Table -->
       <div class="card">
-        <h2 style="color: #6b7158; margin-bottom: 20px;">Albums ({albums.length} of {stats.totalAlbums})</h2>
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="text-xl font-semibold text-lemon-grass-600">Albums ({albums.length} of {stats.totalAlbums})</h2>
+          <div class="flex items-center gap-2" id="paginationControls">
+            <button onclick="loadAllAlbums()" class="button btn-primary text-sm py-1 px-3" id="loadAllButton">
+              Load All Albums
+            </button>
+          </div>
+        </div>
         
         <!-- Filter -->
         <input 
           type="text" 
           id="albumFilter" 
           placeholder="Filter albums by name..." 
-          class="filter-input"
+          class="input mb-4"
           onkeyup="filterAlbums()"
         />
         
         <!-- Bulk Actions -->
-        <div id="bulkActions" class="bulk-actions hidden">
-          <span id="selectedCount">0 selected</span>
-          <button onclick="bulkPublish(true)" class="button btn-success">Publish Selected</button>
-          <button onclick="bulkPublish(false)" class="button btn-draft">Unpublish Selected</button>
-          <button onclick="clearSelection()" class="button btn-secondary">Clear Selection</button>
+        <div id="bulkActions" class="hidden flex items-center gap-3 p-3 bg-raven-50 rounded-md mb-4">
+          <span id="selectedCount" class="text-sm text-raven-600">0 selected</span>
+          <button onclick="bulkTogglePublic(true)" class="button btn-primary text-sm py-1 px-3">Make Public</button>
+          <button onclick="bulkTogglePublic(false)" class="button btn-secondary text-sm py-1 px-3">Make Private</button>
+          <button onclick="clearSelection()" class="button btn-secondary text-sm py-1 px-3">Clear Selection</button>
         </div>
         
         <!-- Table -->
-        <div class="table-container">
-          <table class="albums-table" id="albumsTable">
+        <div class="overflow-x-auto">
+          <table class="table" id="albumsTable">
             <thead>
-              <tr>
-                <th style="width: 40px;">
-                  <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+              <tr class="border-b border-raven-200">
+                <th class="w-10 text-left py-3 px-2">
+                  <input type="checkbox" id="selectAll" class="checkbox" onchange="toggleSelectAll()">
                 </th>
-                <th class="sortable" onclick="sortTable('name')">Name</th>
-                <th class="sortable" onclick="sortTable('type')">Type</th>
-                <th class="sortable" onclick="sortTable('created')">Created</th>
-                <th class="sortable" onclick="sortTable('updated')">Updated</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th class="font-semibold text-raven-700 cursor-pointer sortable" onclick="sortTable('name')">
+                  Name
+                  <span class="ml-1 text-xs opacity-50">↕️</span>
+                </th>
+                <th class="font-semibold text-raven-700 cursor-pointer sortable" onclick="sortTable('type')">
+                  Type
+                  <span class="ml-1 text-xs opacity-50">↕️</span>
+                </th>
+                <th class="font-semibold text-raven-700 cursor-pointer sortable" onclick="sortTable('created')">
+                  Created
+                  <span class="ml-1 text-xs opacity-50">↕️</span>
+                </th>
+                <th class="font-semibold text-raven-700 cursor-pointer sortable" onclick="sortTable('updated')">
+                  Updated
+                  <span class="ml-1 text-xs opacity-50">↕️</span>
+                </th>
+                <th class="font-semibold text-raven-700">
+                  Public
+                </th>
               </tr>
             </thead>
             <tbody>
-              {await Promise.all(albums.map(async (album: any) => {
-                let isPublic = false;
-                try {
-                  const flags = await storage.kv.get(`flags:${album.id}`, 'json');
-                  isPublic = flags?.public || false;
-                } catch (error) {
-                  console.error(`Failed to get flags for album ${album.id}:`, error);
-                }
-                return (
-                  <tr data-album-id={album.id} data-name={album.payload?.name || 'Unnamed Album'} data-type={album.subtype || 'collection'} data-created={album.created || ''} data-updated={album.updated || ''}>
-                    <td>
-                      <input type="checkbox" class="album-checkbox" value={album.id} onchange="updateBulkActions()">
-                    </td>
-                    <td>
-                      <strong>{album.payload?.name || 'Unnamed Album'}</strong>
-                      <br />
-                      <small style="color: #999; font-family: monospace;">{album.id}</small>
-                    </td>
-                    <td style="text-transform: capitalize;">{album.subtype || 'collection'}</td>
-                    <td>{album.created ? new Date(album.created).toLocaleDateString() : '-'}</td>
-                    <td>{album.updated ? new Date(album.updated).toLocaleDateString() : '-'}</td>
-                    <td>
-                      <span class={`badge ${isPublic ? 'btn-success' : 'btn-draft'}`} style="padding: 4px 8px; border-radius: 12px; font-size: 12px;">
-                        {isPublic ? 'Published' : 'Draft'}
-                      </span>
-                    </td>
-                    <td>
-                      <button 
-                        onclick={`togglePublish('${album.id}', ${isPublic})`}
-                        class={`button ${isPublic ? 'btn-draft' : 'btn-success'}`}
-                        style="padding: 6px 12px; font-size: 12px;"
-                      >
-                        {isPublic ? 'Unpublish' : 'Publish'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              }))}
+              {(() => {
+                // Group albums by hierarchy: collection_sets first, then their children
+                const collectionSets = albums.filter(a => a.subtype === 'collection_set');
+                const collections = albums.filter(a => a.subtype !== 'collection_set');
+                const result: any[] = [];
+                
+                // Add collection sets first
+                collectionSets.forEach(collectionSet => {
+                  const isPublic = albumFlags[collectionSet.id] || false;
+                  result.push(
+                    <tr class="hover:bg-raven-50 border-b border-raven-100 collection-set-row" data-album-id={collectionSet.id} data-name={collectionSet.payload?.name || collectionSet.id} data-type={collectionSet.subtype} data-created={collectionSet.created || ''} data-updated={collectionSet.updated || ''} data-public={isPublic}>
+                      <td>
+                        <input type="checkbox" class="album-checkbox checkbox" value={collectionSet.id} onchange="updateBulkActions()">
+                      </td>
+                      <td class="py-3 px-2">
+                        <div class="flex items-center">
+                          <span class="mr-2 text-raven-400 font-mono">📁</span>
+                          <div class="flex flex-col">
+                            <span class="font-semibold text-raven-900">{collectionSet.payload?.name || collectionSet.id}</span>
+                            <span class="text-xs text-raven-500 font-mono">{collectionSet.id}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="py-3 px-2">
+                        <span class="capitalize text-purple-700 font-medium">Collection Set</span>
+                      </td>
+                      <td class="py-3 px-2 text-sm text-raven-600">
+                        {collectionSet.created ? new Date(collectionSet.created).toLocaleDateString() : '-'}
+                      </td>
+                      <td class="py-3 px-2 text-sm text-raven-600">
+                        {collectionSet.updated ? new Date(collectionSet.updated).toLocaleDateString() : '-'}
+                      </td>
+                      <td class="py-3 px-2">
+                        <label class="flex items-center cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            class="public-checkbox rounded border-raven-300 text-lemon-grass-600 focus:ring-lemon-grass-500"
+                            data-album-id={collectionSet.id}
+                            checked={isPublic}
+                            onchange="togglePublic(this)"
+                          >
+                          <span class="ml-2 text-sm text-raven-700">{isPublic ? 'Public' : 'Private'}</span>
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                });
+                
+                // Add regular collections with indentation
+                collections.forEach(album => {
+                  const isPublic = albumFlags[album.id] || false;
+                  result.push(
+                    <tr class="hover:bg-raven-50 border-b border-raven-100 collection-row" data-album-id={album.id} data-name={album.payload?.name || 'Unnamed Album'} data-type={album.subtype || 'collection'} data-created={album.created || ''} data-updated={album.updated || ''} data-public={isPublic}>
+                      <td class="py-3 px-2">
+                        <input type="checkbox" class="album-checkbox rounded" value={album.id} onchange="updateBulkActions()">
+                      </td>
+                      <td class="py-3 px-2">
+                        <div class="flex items-center pl-6">
+                          <span class="mr-2 text-raven-400">└</span>
+                          <div class="flex flex-col">
+                            <span class="font-medium text-raven-900">{album.payload?.name || 'Unnamed Album'}</span>
+                            <span class="text-xs text-raven-500 font-mono">{album.id}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="py-3 px-2">
+                        <span class="capitalize text-blue-700">{album.subtype || 'collection'}</span>
+                      </td>
+                      <td class="py-3 px-2 text-sm text-raven-600">
+                        {album.created ? new Date(album.created).toLocaleDateString() : '-'}
+                      </td>
+                      <td class="py-3 px-2 text-sm text-raven-600">
+                        {album.updated ? new Date(album.updated).toLocaleDateString() : '-'}
+                      </td>
+                      <td class="py-3 px-2">
+                        <label class="flex items-center cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            class="public-checkbox rounded border-raven-300 text-lemon-grass-600 focus:ring-lemon-grass-500"
+                            data-album-id={album.id}
+                            checked={isPublic}
+                            onchange="togglePublic(this)"
+                          >
+                          <span class="ml-2 text-sm text-raven-700">{isPublic ? 'Public' : 'Private'}</span>
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                });
+                
+                return result;
+              })()}
             </tbody>
           </table>
         </div>
@@ -294,22 +579,22 @@ let shouldAutoSync = true; // Always try to load albums via JS
 
     {albums.length === 0 && (
       <!-- No Albums Message -->
-      <div class="card">
-        <h2>No Albums Found</h2>
-        <p>No albums have been synced yet. Albums will auto-load from Lightroom.</p>
+      <div class="admin-card">
+        <h2 class="text-lg font-semibold text-raven-900 mb-3">No Albums Found</h2>
+        <p class="text-raven-600">Albums will sync automatically from Lightroom when available.</p>
       </div>
     )}
   </div>
 
   {authError && (
-    <div class="container">
-      <div class="status error">
+    <div class="max-w-7xl mx-auto">
+      <div class="admin-status-error">
         <strong>Authentication Warning:</strong> {authError}
       </div>
     </div>
   )}
 
-  <script>
+  <script is:inline>
     // Table sorting and filtering functionality
     let sortDirection = {};
     
@@ -347,9 +632,17 @@ let shouldAutoSync = true; // Always try to load albums via JS
       
       // Update sort indicators
       document.querySelectorAll('.sortable').forEach(th => {
-        th.classList.remove('sort-asc', 'sort-desc');
+        const icon = th.querySelector('span');
+        if (icon) icon.textContent = '↕️';
+        icon.classList.remove('opacity-100');
+        icon.classList.add('opacity-50');
       });
-      document.querySelector(`[onclick="sortTable('${column}')"]`)?.classList.add(isAsc ? 'sort-asc' : 'sort-desc');
+      const currentHeader = document.querySelector(`[onclick="sortTable('${column}')"] span`);
+      if (currentHeader) {
+        currentHeader.textContent = isAsc ? '↑' : '↓';
+        currentHeader.classList.remove('opacity-50');
+        currentHeader.classList.add('opacity-100');
+      }
     }
     
     function filterAlbums() {
@@ -410,7 +703,7 @@ let shouldAutoSync = true; // Always try to load albums via JS
       updateBulkActions();
     }
     
-    async function bulkPublish(shouldPublish) {
+    async function bulkTogglePublic(shouldBePublic) {
       const checkedBoxes = Array.from(document.querySelectorAll('.album-checkbox:checked'))
         .filter(cb => cb.closest('tr').style.display !== 'none');
       
@@ -424,19 +717,34 @@ let shouldAutoSync = true; // Always try to load albums via JS
       try {
         const promises = checkedBoxes.map(checkbox => {
           const albumId = checkbox.value;
-          return fetch('/admin/api/sync-metadata', {
+          return fetch('/admin/api/toggle-public', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              action: 'publish',
               albumId: albumId,
-              publish: shouldPublish
+              isPublic: shouldBePublic
             })
           });
         });
         
-        await Promise.all(promises);
-        location.reload(); // Reload to show updated statuses
+        const responses = await Promise.all(promises);
+        const results = await Promise.all(responses.map(r => r.json()));
+        
+        // Update UI for each successful album
+        checkedBoxes.forEach((checkbox, index) => {
+          if (results[index].success) {
+            const albumId = checkbox.value;
+            const row = checkbox.closest('tr');
+            const publicCheckbox = row.querySelector('.public-checkbox');
+            const label = publicCheckbox.nextElementSibling;
+            
+            publicCheckbox.checked = shouldBePublic;
+            label.textContent = shouldBePublic ? 'Public' : 'Private';
+            row.dataset.public = shouldBePublic.toString();
+          }
+        });
+        
+        clearSelection();
       } catch (error) {
         alert(`Bulk operation failed: ${error.message}`);
       } finally {
@@ -444,52 +752,103 @@ let shouldAutoSync = true; // Always try to load albums via JS
         button.textContent = originalText;
       }
     }
-
-    async function syncAlbums() {
-      const statusDiv = document.getElementById('sync-status');
-      const button = event.target;
-      
-      statusDiv.classList.remove('hidden');
-      statusDiv.className = 'mt-4 admin-status-loading';
-      statusDiv.textContent = 'Syncing albums from Lightroom...';
-      button.disabled = true;
-      button.textContent = 'Syncing...';
+    
+    async function togglePublic(checkbox) {
+      const albumId = checkbox.dataset.albumId;
+      const isPublic = checkbox.checked;
+      const label = checkbox.nextElementSibling;
+      const row = checkbox.closest('tr');
       
       try {
-        const response = await fetch('/admin/api/sync-fresh?limit=20', {
-          method: 'GET'
+        const response = await fetch('/admin/api/toggle-public', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            albumId: albumId,
+            isPublic: isPublic
+          })
         });
         
         const result = await response.json();
         
         if (response.ok && result.success) {
-          statusDiv.className = 'mt-4 admin-status-success';
-          statusDiv.textContent = `✓ ${result.message}`;
-          
-          // Reload page after 2 seconds to show updated data
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
+          // Update label text
+          label.textContent = isPublic ? 'Public' : 'Private';
+          row.dataset.public = isPublic;
         } else {
-          statusDiv.className = 'mt-4 admin-status-error';
-          statusDiv.textContent = `✗ ${result.error || result.message || 'Sync failed'}`;
+          // Revert checkbox if API call failed
+          checkbox.checked = !isPublic;
+          throw new Error(result.error || 'Failed to update album status');
         }
       } catch (error) {
-        statusDiv.className = 'mt-4 admin-status-error';
-        statusDiv.textContent = `✗ Network error: ${error.message}`;
-      } finally {
-        button.disabled = false;
-        button.textContent = 'Sync Albums';
+        checkbox.checked = !isPublic; // Revert on error
+        alert(`Failed to update album: ${error.message}`);
       }
     }
     
-    // Load albums on page load
+    async function loadAllAlbums() {
+      const loadAllButton = document.getElementById('loadAllButton');
+      const statusDiv = document.getElementById('sync-status');
+      
+      if (!loadAllButton) return;
+      
+      const originalText = loadAllButton.textContent;
+      loadAllButton.disabled = true;
+      loadAllButton.textContent = 'Loading...';
+      
+      statusDiv.classList.remove('hidden');
+      statusDiv.className = 'admin-status-loading';
+      statusDiv.textContent = 'Loading all albums from Lightroom...';
+      
+      try {
+        let allLoaded = false;
+        let cursor = null;
+        let totalLoaded = 0;
+        
+        while (!allLoaded) {
+          const url = `/admin/api/sync-fresh?limit=100${cursor ? `&cursor=${cursor}&append=true` : ''}`;
+          const response = await fetch(url);
+          const result = await response.json();
+          
+          if (!response.ok || !result.success) {
+            throw new Error(result.error || result.message || 'Failed to load albums');
+          }
+          
+          totalLoaded += result.albumIds?.length || 0;
+          statusDiv.textContent = `Loading albums... (${totalLoaded} loaded)`;
+          
+          if (result.hasMore && result.nextCursor) {
+            cursor = result.nextCursor;
+          } else {
+            allLoaded = true;
+          }
+        }
+        
+        statusDiv.className = 'admin-status-success';
+        statusDiv.textContent = `✓ Loaded all ${totalLoaded} albums successfully`;
+        
+        // Reload page to show all albums
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+        
+      } catch (error) {
+        statusDiv.className = 'admin-status-error';
+        statusDiv.textContent = `✗ Failed to load all albums: ${error.message}`;
+      } finally {
+        loadAllButton.disabled = false;
+        loadAllButton.textContent = originalText;
+      }
+    }
+    
+    // Auto-sync albums when page loads (initial 50)
     document.addEventListener('DOMContentLoaded', async function() {
-      console.log('DOMContentLoaded event fired - loading albums...');
+      if (!{JSON.stringify(shouldAutoSync)}) return;
+      
       const statusDiv = document.getElementById('sync-status');
       statusDiv.classList.remove('hidden');
-      statusDiv.className = 'mt-4 admin-status-loading';
-      statusDiv.textContent = 'Loading albums from Lightroom...';
+      statusDiv.className = 'admin-status-loading';
+      statusDiv.textContent = 'Auto-syncing initial albums from Lightroom...';
       
       try {
         const response = await fetch('/admin/api/sync-fresh?limit=50', {
@@ -499,78 +858,36 @@ let shouldAutoSync = true; // Always try to load albums via JS
         const result = await response.json();
         
         if (response.ok && result.success) {
-          statusDiv.className = 'mt-4 admin-status-success';
-          statusDiv.textContent = `✓ Loaded ${result.albumIds.length} albums`;
+          statusDiv.className = 'admin-status-success';
+          const hasMore = result.hasMore ? ' (more available)' : '';
+          statusDiv.textContent = `✓ Auto-synced ${result.albumIds?.length || 0} albums${hasMore}`;
           
           // Update stats display
-          document.querySelector('.text-raven-600:first-of-type + strong').textContent = result.albumIds.length;
-          document.querySelector('.text-raven-600:nth-of-type(4) + strong').textContent = new Date().toLocaleString();
+          const totalAlbumsEl = document.querySelector('[data-stat="total-albums"]');
+          const lastSyncEl = document.querySelector('[data-stat="last-sync"]');
           
-          // Reload page after 2 seconds to show full album table
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-        } else {
-          statusDiv.className = 'mt-4 admin-status-error';
-          statusDiv.textContent = `✗ Failed to load albums: ${result.error || result.message || 'Unknown error'}`;
-        }
-      } catch (error) {
-        statusDiv.className = 'mt-4 admin-status-error';
-        statusDiv.textContent = `✗ Network error: ${error.message}`;
-      }
-    });
-    
-    async function togglePublish(albumId, isCurrentlyPublic) {
-      const button = event.target;
-      const originalText = button.textContent;
-      
-      button.disabled = true;
-      button.textContent = 'Updating...';
-      
-      try {
-        const response = await fetch('/admin/api/sync-metadata', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            action: 'publish',
-            albumId: albumId
-          })
-        });
-        
-        const result = await response.json();
-        
-        if (response.ok && result.success) {
-          // Update UI immediately
-          button.className = isCurrentlyPublic ? 'admin-button-draft' : 'admin-button-success';
-          button.textContent = isCurrentlyPublic ? 'Draft' : 'Published';
-          
-          // Update the album item styling
-          const albumItem = button.closest('div');
-          const borderElement = albumItem.querySelector('div[class*="border-l-4"]');
-          if (borderElement) {
-            if (isCurrentlyPublic) {
-              borderElement.classList.remove('border-green-500');
-              borderElement.classList.add('border-raven-300');
-            } else {
-              borderElement.classList.remove('border-raven-300');
-              borderElement.classList.add('border-green-500');
-            }
+          if (totalAlbumsEl && result.totalSynced) {
+            totalAlbumsEl.textContent = result.totalSynced;
+          }
+          if (lastSyncEl) {
+            lastSyncEl.textContent = new Date().toLocaleString();
           }
           
-          // Update the onclick handler
-          button.setAttribute('onclick', `togglePublish('${albumId}', ${!isCurrentlyPublic})`);
+          // Reload page to show album table if we have albums
+          if (result.albumIds?.length > 0) {
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
+          }
         } else {
-          throw new Error(result.error || 'Failed to update publish status');
+          statusDiv.className = 'admin-status-error';
+          statusDiv.textContent = `✗ Auto-sync failed: ${result.error || result.message}`;
         }
       } catch (error) {
-        alert(`Failed to update album: ${error.message}`);
-        button.textContent = originalText;
-      } finally {
-        button.disabled = false;
+        statusDiv.className = 'admin-status-error';
+        statusDiv.textContent = `✗ Auto-sync error: ${error.message}`;
       }
-    }
+    });
   </script>
 </body>
 </html>

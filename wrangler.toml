@@ -44,4 +44,7 @@ bucket_name = "seaofclouds-assets"
 # Development environment override
 [env.development]
 vars = { ALLOWED_ORIGINS = "http://localhost:8787", ENVIRONMENT = "development" }
-# Development uses no KV namespaces or R2 buckets - will use local storage
+
+[[env.development.r2_buckets]]
+binding = "R2_STORAGE"
+bucket_name = "seaofclouds-assets"

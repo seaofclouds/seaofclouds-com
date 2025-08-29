@@ -8,11 +8,15 @@ export interface OAuthTokens {
   tokenType?: string;
 }
 
+// Shared memory storage for development (persists across instances)
+const developmentTokens = new Map<string, OAuthTokens>();
+
 export class AdobeOAuth {
   // Adobe IMS endpoints - confirmed from Adobe documentation
   private static readonly ADOBE_AUTHORIZE_URL = 'https://ims-na1.adobelogin.com/ims/authorize/v2';
   private static readonly ADOBE_TOKEN_URL = 'https://ims-na1.adobelogin.com/ims/token/v3';
   private static readonly ADOBE_REVOKE_URL = 'https://ims-na1.adobelogin.com/ims/revoke';
+  private static readonly ADOBE_LOGOUT_URL = 'https://ims-na1.adobelogin.com/ims/logout';
   
   // Lightroom Partner API scopes - from official Lightroom Partner API documentation
   private static readonly LIGHTROOM_SCOPE = 'openid,AdobeID,lr_partner_apis,lr_partner_rendition_apis,offline_access';
@@ -28,6 +32,10 @@ export class AdobeOAuth {
     return this.storage;
   }
 
+  private isProduction(): boolean {
+    return this.env.ENVIRONMENT === 'production';
+  }
+
   /**
    * Generate Adobe OAuth authorization URL
    * @param redirectUri - Must match exactly what's configured in Adobe Developer Console
@@ -36,7 +44,7 @@ export class AdobeOAuth {
   generateAuthUrl(redirectUri: string, state?: string): string {
     const params = new URLSearchParams({
       client_id: this.env.ADOBE_CLIENT_ID!,
-      redirect_uri: redirectUri,
+      redirect_uri: redirectUri,  // Standard OAuth parameter name
       response_type: 'code',
       scope: AdobeOAuth.LIGHTROOM_SCOPE
     });
@@ -98,8 +106,15 @@ export class AdobeOAuth {
       expiresAt: tokens.expiresAt
     });
 
-    await this.getStorage().kv.setOAuthTokens(tokens);
-    console.log('Tokens stored successfully');
+    // Use KV in production, shared memory in development
+    if (this.isProduction()) {
+      await this.getStorage().kv.setOAuthTokens(tokens);
+      console.log('Tokens stored in KV successfully');
+    } else {
+      developmentTokens.set('oauth', tokens);
+      console.log('Tokens stored in shared memory for development');
+    }
+    
     return tokens;
   }
 
@@ -107,7 +122,12 @@ export class AdobeOAuth {
    * Refresh access token using refresh token
    */
   async refreshTokens(): Promise<OAuthTokens> {
-    const currentTokens = await this.getStorage().kv.getOAuthTokens();
+    let currentTokens;
+    if (this.isProduction()) {
+      currentTokens = await this.getStorage().kv.getOAuthTokens();
+    } else {
+      currentTokens = developmentTokens.get('oauth') || {};
+    }
     
     if (!currentTokens.refreshToken) {
       throw new Error('No refresh token available - user needs to re-authenticate');
@@ -143,7 +163,12 @@ export class AdobeOAuth {
       tokenType: data.token_type || 'Bearer'
     };
 
-    await this.getStorage().kv.setOAuthTokens(tokens);
+    // Save tokens based on environment
+    if (this.isProduction()) {
+      await this.getStorage().kv.setOAuthTokens(tokens);
+    } else {
+      developmentTokens.set('oauth', tokens);
+    }
     return tokens;
   }
 
@@ -151,9 +176,16 @@ export class AdobeOAuth {
    * Get a valid access token, refreshing if necessary
    */
   async getValidAccessToken(): Promise<string> {
-    const tokens = await this.getStorage().kv.getOAuthTokens();
+    let tokens;
     
-    if (!tokens.accessToken) {
+    // Use KV in production, shared memory in development
+    if (this.isProduction()) {
+      tokens = await this.getStorage().kv.getOAuthTokens();
+    } else {
+      tokens = developmentTokens.get('oauth');
+    }
+    
+    if (!tokens || !tokens.accessToken) {
       throw new Error('No access token available - user needs to authenticate');
     }
 
@@ -180,9 +212,16 @@ export class AdobeOAuth {
    * Revoke all tokens and clear storage
    */
   async revokeTokens(): Promise<void> {
-    const tokens = await this.getStorage().kv.getOAuthTokens();
+    let tokens;
     
-    if (tokens.accessToken) {
+    // Get tokens based on environment
+    if (this.isProduction()) {
+      tokens = await this.getStorage().kv.getOAuthTokens();
+    } else {
+      tokens = developmentTokens.get('oauth');
+    }
+    
+    if (tokens?.accessToken) {
       try {
         await fetch(AdobeOAuth.ADOBE_REVOKE_URL, {
           method: 'POST',
@@ -196,17 +235,34 @@ export class AdobeOAuth {
             token: tokens.accessToken
           })
         });
+        console.log('Adobe tokens revoked successfully');
       } catch (error) {
         console.error('Failed to revoke tokens with Adobe:', error);
       }
     }
 
     // Clear tokens from storage
-    await this.getStorage().kv.setOAuthTokens({
-      accessToken: '',
-      refreshToken: '',
-      expiresAt: new Date(0).toISOString()
+    if (this.isProduction()) {
+      await this.getStorage().kv.setOAuthTokens({
+        accessToken: '',
+        refreshToken: '',
+        expiresAt: new Date(0).toISOString()
+      });
+    } else {
+      developmentTokens.delete('oauth');
+      console.log('Development tokens cleared from memory');
+    }
+  }
+
+  /**
+   * Get Adobe logout URL to clear browser session
+   */
+  getLogoutUrl(redirectUri: string): string {
+    const params = new URLSearchParams({
+      client_id: this.env.ADOBE_CLIENT_ID!,
+      redirect_uri: redirectUri
     });
+    return `${AdobeOAuth.ADOBE_LOGOUT_URL}?${params.toString()}`;
   }
 
   /**
@@ -272,14 +328,11 @@ export class DevAuth {
  * Factory function to create appropriate auth provider based on environment
  */
 export function createAuthProvider(env: Env) {
-  // Only use Adobe OAuth in production with proper credentials
-  if (env.ENVIRONMENT === 'production') {
-    if (!env.ADOBE_CLIENT_ID || !env.ADOBE_CLIENT_SECRET) {
-      throw new Error('Adobe OAuth credentials required for production environment');
-    }
+  // Use Adobe OAuth if credentials are available, otherwise fall back to DevAuth
+  if (env.ADOBE_CLIENT_ID && env.ADOBE_CLIENT_SECRET) {
     return new AdobeOAuth(env);
   }
   
-  // Use dev auth for development/staging
+  // Use dev auth if Adobe credentials not available
   return new DevAuth(env);
 }

@@ -10,20 +10,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
     try {
       const authProvider = createAuthProvider(env);
       
-      if (env.ENVIRONMENT === 'production') {
-        // Production: Use Adobe OAuth
-        const isAuthenticated = await authProvider.isAuthenticated();
-        if (!isAuthenticated) {
-          return Response.redirect(new URL('/admin/auth/login', url.origin));
-        }
-      } else {
-        // Development: Check session cookie
-        const sessionToken = context.cookies.get('admin_session')?.value;
-        const isAuthenticated = await authProvider.isAuthenticated(sessionToken);
-        
-        if (!isAuthenticated) {
-          return Response.redirect(new URL('/admin/auth/login', url.origin));
-        }
+      // Force Adobe OAuth for localhost testing
+      const isAuthenticated = await authProvider.isAuthenticated();
+      if (!isAuthenticated) {
+        return Response.redirect(new URL('/admin/auth/login', url.origin));
       }
     } catch (error) {
       console.error('Auth middleware error:', error);

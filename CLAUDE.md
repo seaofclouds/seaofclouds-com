@@ -211,4 +211,12 @@ Test Images (local dev placeholders)
 - `sync-fresh.ts` - Clean foundation for album sync (needs enhancement)
 - `sync-metadata.ts` - Complex implementation (reference for features)
 - `sync-renditions.ts` - Focused rendition downloads (stable)
-- deploy to production by default while working on admin and lightroom api.
+
+### 🚀 Deployment Configuration:
+- **Production Default**: Always use `npx wrangler deploy --env production`
+- **Worker Environment**: `seaofclouds-production` with custom domain `dev.seaofclouds.com`
+- **Monitoring**: Build timestamps in HTML meta tags for deployment verification
+- **Logging**: Use `npx wrangler tail --env production` for server monitoring
+- test task in browser with playwright after deploy or confirm with user.
+- remember there are some challenges with recursion in api requests. load them using cursor and efficiently from adobe.
+- when running local server, watch logs and run playwright to monitor changes and events in browser.

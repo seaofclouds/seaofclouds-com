@@ -6,7 +6,7 @@ interface Env {
   ADOBE_OAUTH_TOKENS: KVNamespace;      // Runtime OAuth: access_token, refresh_token, token_expires_at
   RATE_LIMITS: KVNamespace;
   SESSION: KVNamespace;  // Astro session storage
-  ASSETS: R2Bucket;  // R2 bucket for asset storage
+  R2_STORAGE: R2Bucket;  // R2 bucket for asset storage
   ALLOWED_ORIGINS: string;
   ENVIRONMENT: 'development' | 'staging' | 'production';
   // Secrets (encrypted, set via wrangler secret)

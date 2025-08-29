@@ -4,8 +4,9 @@ import { createAuthProvider } from '../../../lib/auth';
 export const GET: APIRoute = async ({ url, locals }) => {
   const env = locals.runtime.env as Env;
   
-  if (env.ENVIRONMENT !== 'production') {
-    return new Response('OAuth callback only available in production', { status: 404 });
+  // Allow callback in any environment if Adobe credentials are available
+  if (!env.ADOBE_CLIENT_ID || !env.ADOBE_CLIENT_SECRET) {
+    return new Response('OAuth callback requires Adobe credentials', { status: 404 });
   }
 
   const authProvider = createAuthProvider(env) as any; // AdobeOAuth

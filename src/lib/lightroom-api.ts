@@ -227,16 +227,20 @@ export class LightroomApiClient {
   /**
    * List albums with optional filters
    */
-  async listAlbums(catalogId: string, options: { limit?: number; cursor?: string } = {}): Promise<LightroomApiResponse<any>> {
+  async listAlbums(catalogId: string, options: { limit?: number; cursor?: string; subtype?: string } = {}): Promise<LightroomApiResponse<any>> {
     return this.retryRequest(async () => {
-      let endpoint = `/catalogs/${catalogId}/albums?subtype=collection`;
+      let endpoint = `/catalogs/${catalogId}/albums`;
+      
+      if (options.subtype) {
+        endpoint += `?subtype=${options.subtype}`;
+      }
       
       if (options.limit) {
-        endpoint += `&limit=${options.limit}`;
+        endpoint += `${endpoint.includes('?') ? '&' : '?'}limit=${options.limit}`;
       }
       
       if (options.cursor) {
-        endpoint += `&after=${options.cursor}`;
+        endpoint += `${endpoint.includes('?') ? '&' : '?'}after=${options.cursor}`;
       }
 
       const response = await this.makeRequest<any>(endpoint);
