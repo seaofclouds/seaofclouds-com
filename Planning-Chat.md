@@ -113,15 +113,25 @@ Create album management features:
 - Display sync errors or warnings if any
 ```
 
-## Phase 4: Public API & Testing (30 min)
-### Task 4.1: Public Endpoints (30 min)
+## Phase 4: Public Site Implementation (1 hour)
+### Task 4.1: Public Album Routes (30 min)
 ```
-Implement basic public-facing functionality:
-- Create /api/albums endpoint serving from R2 cache
-- Add /api/albums/:id endpoint with proper caching headers
-- Implement slug resolution via KV lookup
-- Add fallback to Adobe API if asset missing from R2
-- Test with curl/Postman to verify data flow
+Implement public-facing album viewing:
+- Create [slug].astro for /:slug album pages with KV slug resolution
+- Add /albums/:id route for direct ID access
+- Implement R2 metadata fetching with ETag support
+- Add fallback to last-good JSON if sync fails
+- Test slug resolution and album rendering
+```
+
+### Task 4.2: Public Site Layout & UX (30 min)
+```
+Build public gallery experience:
+- Implement CSS Grid tiled layout (auto-fit, minmax, no fixed heights)
+- Add semantic HTML: <figure><img><figcaption> structure
+- Create responsive image serving with srcset/sizes
+- Add basic right-click deterrents (context menu disable, drag prevention)
+- Test mobile responsiveness and touch targets (≥44px)
 ```
 
 ## Suggested Implementation Order:
@@ -134,15 +144,22 @@ Implement basic public-facing functionality:
 6. **Implement Task 2.2** - Add the sync engine to populate R2
 7. **If time permits, do Task 3.2 and 4.1**
 
-## Key Simplifications for 5-hour Scope:
+## Implementation Notes:
 
-1. **Skip OAuth for now** - Use ADMIN_PASSWORD only
-2. **No webhook support** - Manual sync only
-3. **Basic UI** - Simple HTML forms, minimal styling
-4. **Limited renditions** - Just 640, 1280, 2048 (skip 2560 and fullsize)
-5. **No slug collision handling** - Use IDs for now
-6. **No featured albums** - Just public/private toggle
-7. **No rate limit UI** - Log to console only
+### **Completed Beyond Original Scope:**
+1. **Full Adobe OAuth** - Complete IMS integration (not just ADMIN_PASSWORD)
+2. **Production Deployment** - Working at dev.seaofclouds.com
+3. **Enhanced Authentication** - Dual environment support with proper token management
+
+### **Future Enhancements:**
+1. **Webhook Support** - Adobe I/O Events for automatic sync
+2. **Enhanced UI** - More sophisticated admin interface styling
+3. **Full Renditions** - Include 2560 and fullsize (currently 640, 1280, 2048)
+4. **Slug Collision Handling** - Automatic "-2", "-3" suffixing
+5. **Featured Albums** - Enhanced flag system beyond public/private
+6. **Rate Limit UI** - Visual feedback in admin interface
+7. **Staging Environment** - Three-tier deployment with limited album slice
+8. **Asset Domain** - assets.seaofclouds.com CDN setup
 
 ## First Prompt to Start:
 

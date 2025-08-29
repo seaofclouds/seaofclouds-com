@@ -33,24 +33,26 @@ npx wrangler deploy --env production
 ### Single Worker Routing
 All routes handled by one Worker:
 - `/` - Public site (Astro SSR)
-- `/:slug` - Album by slug (KV lookup)
+- `/:slug` - Album by slug (KV lookup with reserved slug protection)
 - `/albums/:id` - Album by Lightroom ID
-- `/assets/*` - R2 asset serving with Adobe fallback
+- `/assets/*` - R2 asset serving with Adobe fallback for cache misses
 - `/admin/*` - Protected admin UI (requires authentication)
 - `/admin/api/*` - Protected admin JSON endpoints (requires authentication)
-- `/admin/auth/*` - OAuth (prod) / dev login (local)
+- `/admin/auth/*` - OAuth authentication flow
 
 **Authentication Architecture:**
 - All `/admin/*` routes protected by Astro middleware
 - Production: Adobe OAuth with KV-stored tokens
-- Development: Session-based auth with in-memory sessions
+- Development: Adobe OAuth with shared memory token storage
+- Staging: OAuth enabled with limited album slice
 - Middleware redirects unauthenticated requests to `/admin/auth/login`
+- Session cookies: HttpOnly, Secure, SameSite=Strict
 
 ### Data Sources
 Abstracted as `DataSource = test | lightroom | flatfile`:
-- `test`: Local dev with Lorem Picsum images
-- `lightroom`: Production with OAuth + paginated API
-- `flatfile`: Optional static content pages
+- `test`: Local dev with Lorem Picsum deterministic images, schema identical to production
+- `lightroom`: Production with OAuth + paginated API (collection_set: 07ba0fcb09714671bc71ab7ba5a091e7)
+- `flatfile`: Optional static content pages (Astro), can coexist with album slugs
 
 ### Storage Model
 **R2 Structure:**
@@ -78,9 +80,12 @@ Abstracted as `DataSource = test | lightroom | flatfile`:
 - **Session Handling**: Cookies with HttpOnly, Secure, SameSite=Strict
 
 **Caching Strategy:**
-- JSON: `Cache-Control: public, max-age=3600` with ETag
-- Images: Long-lived (up to 1y, immutable)
+- JSON: `Cache-Control: public, max-age=3600` with strong ETag (content hash)
+- Images: Long-lived TTL (1y, immutable), new processing → new object keys
+- Cloudflare Cache Rules: "Cache Everything" with proper Cache-Control headers
+- Cache Reserve and Tiered Cache for large/heavy assets
 - Always serve last-good JSON on public routes if sync fails
+- Write R2 only on content change (compare hash before PUT)
 
 **API Rate Limiting:**
 - Always paginate via `links.next`
@@ -90,6 +95,11 @@ Abstracted as `DataSource = test | lightroom | flatfile`:
 
 **Reserved Slugs:**
 Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/method`, `/about`, `/posts`
+
+**Slug Generation:**
+- Auto-generation: lowercase, keep a-z/0-9, spaces/specials → '-', collapse dashes, trim edges
+- Collision handling: append "-2", "-3", ... deterministically
+- KV slug map: `slug:{slug}` = `{ id, type:"album" }`
 
 **Rendition Sizes:**
 640, 1280, 2048, 2560 (standard), fullsize (optional)
@@ -102,6 +112,11 @@ Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/m
 - Server-side rendered public pages with edge/R2/KV caching
 - Touch targets ≥ 44px
 - Grid/Flex layouts with relative units (rem/%/vh/vw)
+- Tiled grid v1: CSS Grid auto-fit with minmax, no fixed heights, respect orientation
+- Future: "print-like" spread layouts
+- Layout & A11y: `<figure><img><figcaption>` semantics, keyboard nav + minimal lightbox
+- Image optimization: lazy loading, decoding=async, sizes/srcset
+- Right-click deterrents: disable context menu/drag, overlay pixel trick (not true protection)
 
 ## Environment Configuration
 
@@ -115,6 +130,11 @@ Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/m
 - `ALLOWED_ORIGINS` - CORS allowed origins
 - `ENVIRONMENT` (development | staging | production)
 
+**Domain Strategy:**
+- Public site: `https://www.seaofclouds.com`
+- Assets CDN: `https://assets.seaofclouds.com` (R2 public bucket)
+- Admin: Same Worker at `/admin` (single user Adobe SSO)
+
 **KV Namespaces:**
 - `ADOBE_LIGHTROOM_TOKENS` - Sync metadata and state
 - `ADOBE_OAUTH_TOKENS` - OAuth tokens and expiry
@@ -126,19 +146,37 @@ Avoid collisions with: `/`, `/admin`, `/albums`, `/assets`, `/api`, `/auth`, `/m
 ## Data Flow
 
 **Public Album Page:**
-1. Fetch `R2:/albums/{id}/metadata.json` (with ETag)
-2. Render grid using ordered assets
-3. Point `<img>` to assets domain URLs with srcset
+1. Resolve slug via KV lookup (`slug:{slug}`) or use direct ID
+2. Fetch `R2:/albums/{id}/metadata.json` (with ETag)
+3. Render tiled grid (CSS Grid auto-fit, minmax) using ordered assets
+4. Point `<img>` to assets domain URLs with srcset/sizes
+
+**Admin Album List:**
+1. Fetch `R2:/albums/metadata.json` once
+2. Client-side sort/filter (name, updated, public, featured)
+3. Expand collection_set nodes on demand (no eager children fetches)
+4. Load album details only when selected
 
 **Admin Publish Flow:**
-1. Toggle "public" → enqueue album detail fetch
-2. Fetch album detail from Lightroom API
-3. Write metadata + create renditions in R2
-4. Update KV flags
+1. Toggle "public" → enqueue album detail fetch from Lightroom API
+2. Fetch album detail (ordered asset IDs), write `R2:/albums/{id}/metadata.json`
+3. For each asset: write metadata.json, create renditions (640/1280/2048/2560)
+4. Set `flags:{albumId}.public=true` in KV
+5. Update main albums index
+
+**Feature Toggle:**
+- Update `flags:{albumId}.featured` in KV
+- Optional: mirror into album JSON on next write
+
+**Error Handling & Fallback:**
+- Public pages: On R2 miss → serve last-good JSON, show "updated {time} ago"
+- Asset serving: R2 miss → Adobe fetch + write-through if album is public
+- Admin: Show precise ingestion status, surface backoffs and retry times
 
 **Sync Safety:**
-- Resumable via KV cursors/timestamps
-- Exponential backoff on 429/5xx
+- Resumable via KV cursors/timestamps (`sync:state`)
+- Concurrency limits (3-5 requests) + exponential backoff on 429/5xx
+- Daily soft budgets to prevent unbounded sync
 - Only mirror published albums to R2
 
 ## REFERENCES

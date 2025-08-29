@@ -2,86 +2,40 @@
 
 A minimalist photography portfolio built with Astro and Cloudflare Workers, serving cached Adobe Lightroom data.
 
-## Installation
+## Quick Start
 
 ```bash
-# Install dependencies
 npm install
-
-# Build the project
-npm run build
-
-# Start local development server (runs on http://localhost:8787)
-npm run dev
+npm run dev     # Local development on https://localhost:8787
+npm run build   # Build for production
+npm run deploy  # Deploy to Cloudflare Workers
 ```
 
-## Development
+## Features
 
-This project uses Cloudflare Workers (not Pages) with KV storage and R2 buckets. See [CLAUDE.md](./CLAUDE.md) for detailed architecture and development guidance.
-
-### Key Features
-
-- **Public Site**: Minimalist galleries with fast, SEO-optimized rendering
-- **Admin UI**: Single-user management interface with Adobe OAuth authentication
-- **Cache-first API**: Lightroom data served from R2 with Adobe fallback  
-- **Adobe OAuth**: Full OAuth 2.0 integration with IMS endpoints for Lightroom API access
-- **Test Data**: 13 realistic albums with Lorem Picsum images for local development
-
-### Project Structure
-
-```
-/
-├── dist/              # Build output (Worker files)
-├── src/
-│   ├── lib/           # Core libraries
-│   │   ├── auth.ts        # Adobe OAuth & dev auth
-│   │   ├── datasource.ts  # Data abstraction layer
-│   │   ├── lightroom-api.ts # Lightroom API client
-│   │   └── storage.ts     # R2 & KV abstractions
-│   ├── pages/         # Astro routes
-│   │   ├── admin/     # Admin interface
-│   │   │   ├── auth/  # OAuth handlers (/login, /callback, /logout)
-│   │   │   └── api/   # Protected admin API endpoints
-│   │   └── [slug].astro # Public album pages
-│   ├── types/         # TypeScript definitions
-│   └── worker.ts      # Worker entry point
-├── astro.config.mjs   # Astro configuration
-└── wrangler.toml      # Cloudflare Worker config
-```
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start local dev server on port 8787 |
-| `npm run build` | Build for production |
-| `npm run deploy` | Build and deploy to Cloudflare |
-
-### Authentication Routes
-
-- **`/admin/auth/login`** - Initiates Adobe OAuth flow (redirects to Adobe IMS)
-- **`/admin/auth/callback`** - OAuth callback handler for token exchange
-- **`/admin/auth/logout`** - Revokes tokens and redirects to root domain
-
-### Environment
-
-- **Development**: Adobe OAuth with shared memory token storage, runs on https://localhost:8787 
-- **Production**: Adobe OAuth with KV token storage, deployed at dev.seaofclouds.com
-- **Test Data**: Lorem Picsum images for development, real Lightroom data in production
-
-## Deployment
-
-Deployment to Cloudflare Workers requires the following secrets to be set via `wrangler secret`:
-
-- `ADMIN_PASSWORD` - Admin access password for development
-- `ADOBE_CLIENT_ID` - Adobe API client ID (production only)
-- `ADOBE_CLIENT_SECRET` - Adobe API client secret (production only)
+- **Public Galleries**: Fast, SEO-optimized album viewing with slug-based URLs
+- **Admin Interface**: Single-user management with Adobe OAuth authentication  
+- **Cache-First API**: Lightroom data served from R2 with Adobe API fallback
+- **Asset CDN**: Optimized image serving with multiple rendition sizes
+- **Test Mode**: 13 realistic albums with Lorem Picsum for local development
 
 ## Architecture
 
-See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation about:
-- Storage model (R2 + KV structure)
-- API rate limiting and caching strategies
-- Data flow patterns
-- Authentication approach
-- Development principles
+Single Cloudflare Worker serving:
+- Public site at `/` and `/:slug` 
+- Admin interface at `/admin/*` (Adobe OAuth protected)
+- Asset serving at `/assets/*` (R2 + Adobe fallback)
+
+**Storage**: R2 buckets for assets/metadata, KV for flags/slugs/tokens
+
+**Authentication**: Adobe OAuth 2.0 with IMS endpoints (single user)
+
+## Documentation
+
+See [CLAUDE.md](./CLAUDE.md) for comprehensive technical documentation and [Planning-Chat.md](./Planning-Chat.md) for current development status.
+
+## Deployment
+
+Requires these Cloudflare secrets via `wrangler secret`:
+- `ADOBE_CLIENT_ID` / `ADOBE_CLIENT_SECRET` 
+- `ADMIN_PASSWORD`

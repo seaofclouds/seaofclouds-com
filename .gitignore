@@ -28,7 +28,7 @@ pnpm-debug.log*
 .dev.vars
 
 # chats
-Planning-Chat.md
+# Planning-Chat.md
 tmp/
 
 # SSL certificates for local development
